@@ -1,11 +1,11 @@
-#include <stdio.h>
-#include <string.h>
+#include <cstdio>
+#include <cstring>
 
 #include "esp_timer.h"
 #include "esp_wifi.h"
 #include "driver/uart.h"
 
-#include "config.h"
+#include "../main/config.h"
 #include "csi.h"
 
 static char s_line[CSI_LINE_MAX];
