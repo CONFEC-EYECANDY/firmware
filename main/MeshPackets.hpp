@@ -46,7 +46,7 @@ namespace wifi
     {
         ParentSearchResponsePacket() : MeshPacket(MeshPacketType::ParentSearchResponse), childrenCount(0), depth(0) {}
         explicit ParentSearchResponsePacket(const uint8_t count, const uint8_t depth)
-        : MeshPacket(MeshPacketType::ParentSearch), childrenCount(count) , depth(depth) {}
+        : MeshPacket(MeshPacketType::ParentSearchResponse), childrenCount(count) , depth(depth) {}
 
         uint8_t childrenCount;
         uint8_t depth;

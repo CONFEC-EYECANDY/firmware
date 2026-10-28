@@ -164,6 +164,7 @@ namespace wifi
         if (std::ranges::any_of(candidateParents,
                                 [candidateParent](const CandidateParent& p) { return p.macAddress == candidateParent.macAddress; })) return;
 
+        ESP_LOGI(TAG, "Added Candidate Parent");
         candidateParents.push_back(candidateParent);
         hasAddedNewCandidateParentThisCycle = true;
     }
@@ -349,7 +350,6 @@ namespace wifi
         MeshEvent event(MeshEventType::TransmissionCallback);
         event.data.transmissionCallbackData.destinationMac = MacAddress{info->des_addr};
         sendEvent(&event);
-        ESP_LOGI(TAG, "%s", status == ESP_NOW_SEND_SUCCESS ? "Sent message." : "Unable to send message.");
     }
 
 }
