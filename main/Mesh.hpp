@@ -44,7 +44,7 @@ namespace wifi
 
         // mesh properties
         RoutingSubtable routingSubtable {};
-        TickType_t stateEventTimerStartedAt {};
+        TickType_t fsmEventTimerStartedAt {};
         bool belongsToMesh {false};
         bool isRootNode {SET_ROOT_NODE};
 
@@ -87,7 +87,7 @@ namespace wifi
         void processFsmEventTask();
 
         std::vector<CandidateParent> candidateParents {};
-        bool hasAddedCandidateParents {false};
+        bool hasAddedNewCandidateParentThisCycle {false};
         void parentBroadcastFsmEvent();
 
         // esp now helpers and callbacks

@@ -31,14 +31,20 @@ namespace wifi
         error = esp_wifi_init(&wifiConfig);                             if (error != ESP_OK) return error;
         error = esp_wifi_set_storage(WIFI_STORAGE_RAM);                 if (error != ESP_OK) return error;
         error = esp_wifi_set_mode(WIFI_MODE_STA);                       if (error != ESP_OK) return error;
-        error = esp_wifi_set_channel(channel_, WIFI_SECOND_CHAN_NONE);  if (error != ESP_OK) return error;
         ESP_LOGI(TAG, "WiFi Initialized!");
 
-        if (xTaskCreate(runEntry, "WiFiManagerTask", 2048, nullptr, WIFI_TASK_PRIORITY, &taskHandle_) != pdFAIL) return ESP_FAIL;
+        queueHandle_ = xQueueCreate(MAX_WIFI_PENDING_EVENTS, sizeof(WiFiEvent));
+        if (xTaskCreate(runEntry, "WiFiManagerTask", 2048, nullptr, WIFI_TASK_PRIORITY, &taskHandle_) == pdFAIL) return ESP_FAIL;
 
         initialized_ = true;
         return ESP_OK;
     }
+
+    bool WiFiManager::sendEvent(const WiFiEvent* event) const
+    {
+        return xQueueSend(queueHandle_, event, portMAX_DELAY) == pdTRUE;
+    }
+
     esp_err_t WiFiManager::start()
     {
         if (!initialized_) return ESP_ERR_INVALID_STATE;
@@ -77,9 +83,10 @@ namespace wifi
     }
     void WiFiManager::run()
     {
-        xQueueReceive(queueHandle_, currentEvent_, portMAX_DELAY);
+        WiFiEvent currentEvent{};
+        xQueueReceive(queueHandle_, &currentEvent, portMAX_DELAY);
 
-        switch (currentEvent_->type)
+        switch (currentEvent.type)
         {
         case WiFiEventType::StartRadio:
             {

@@ -40,8 +40,7 @@ namespace wifi
         static WiFiManager& getInstance();
 
         esp_err_t init();
-        esp_err_t start();
-        esp_err_t stop();
+        bool sendEvent(const WiFiEvent* event) const;
 
         static void runEntry(void* arg);
 
@@ -55,7 +54,8 @@ namespace wifi
         TaskHandle_t taskHandle_ = nullptr;
         QueueHandle_t queueHandle_ = nullptr;
 
-        WiFiEvent* currentEvent_ = nullptr;
+        esp_err_t start();
+        esp_err_t stop();
 
         uint8_t channel_ = 1;
         bool initialized_ = false;

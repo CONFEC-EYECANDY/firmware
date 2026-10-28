@@ -1,5 +1,6 @@
 #include "Mesh.hpp"
 
+#include <algorithm>
 #include <sys/types.h>
 
 #include "esp_netif.h"
@@ -36,6 +37,9 @@ namespace wifi
         if (xTaskCreate(runEntry, "MeshTask", 2048, nullptr, MESH_TASK_PRIORITY, &taskHandle_)
             != pdPASS) return ESP_FAIL;
 
+        constexpr WiFiEvent event{.type = WiFiEventType::StartRadio, .data = nullptr};
+        WiFiManager::getInstance().sendEvent(&event);
+
         return ESP_OK;
     }
 
@@ -52,7 +56,9 @@ namespace wifi
     {
         while (true)
         {
-            processQueue(nextFsmStateEventIn());
+            const TickType_t t = nextFsmStateEventIn();
+            ESP_LOGI(TAG, "processing queue for %" PRIu32"", t);
+            processQueue(t);
             if (nextFsmStateEventIn() <= 0) processFsmEventTask();
         }
     }
@@ -60,7 +66,7 @@ namespace wifi
     void Mesh::processQueue(const TickType_t processFor)
     {
         MeshEvent currentEvent(MeshEventType::Null);
-        if (xQueueReceive(eventQueue_, &currentEvent, processFor) != pdTRUE) return;
+        if (xQueueReceive(eventQueue_, &currentEvent, processFor) == pdFALSE) return;
 
         switch (currentEvent.type)
         {
@@ -86,6 +92,11 @@ namespace wifi
     // process mesh events
     void Mesh::radioUpMeshEvent(const MeshEvent* event)
     {
+        if (isRootNode)
+        {
+            switchState(MeshState::Online);
+            return;
+        }
         if (!belongsToMesh) switchState(MeshState::LookingForParent);
     }
 
@@ -134,13 +145,14 @@ namespace wifi
         uint8_t data[3]{};
         ParentSearchResponsePacket(routingSubtable.getChildrenCount(), routingSubtable.getDepth()) >> data;
         esp_now_send(receivedData.senderMac.macAddress, data, sizeof(data));
+        ESP_LOGI(TAG, "Responded to Parent Search Broadcast");
     }
 
     void Mesh::receivedParentSearchResponsePacket(const ReceivedData& receivedData)
     {
         ParentSearchResponsePacket parentSearchResponsePacket{};
         parentSearchResponsePacket << receivedData.data;
-
+        ESP_LOGI(TAG, "Received Parent Search Response Packet");
         const CandidateParent candidateParent
         {
             .macAddress = receivedData.senderMac,
@@ -149,11 +161,16 @@ namespace wifi
             .childrenCount = parentSearchResponsePacket.childrenCount,
         };
 
+        if (std::ranges::any_of(candidateParents,
+                                [candidateParent](const CandidateParent& p) { return p.macAddress == candidateParent.macAddress; })) return;
+
         candidateParents.push_back(candidateParent);
+        hasAddedNewCandidateParentThisCycle = true;
     }
 
     void Mesh::addNewChild(const ReceivedData& receivedData)
     {
+        ESP_LOGI(TAG, "add child called but guess what it aint happening >:)");
         // TODO: Finish child adding logic
     }
 
@@ -161,7 +178,8 @@ namespace wifi
     void Mesh::switchState(const MeshState newState)
     {
         meshState_ = newState;
-        stateEventTimerStartedAt= xTaskGetTickCount();
+        fsmEventTimerStartedAt = xTaskGetTickCount();
+        ESP_LOGI(TAG, "State switched, new state %d", newState);
     }
 
     TickType_t Mesh::getFsmTaskDelay() const
@@ -185,7 +203,7 @@ namespace wifi
 
     TickType_t Mesh::nextFsmStateEventIn() const
     {
-        return xTaskGetTickCount() - stateEventTimerStartedAt;
+        return getFsmTaskDelay() - (xTaskGetTickCount() - fsmEventTimerStartedAt);
     }
 
     // fsm event tasks
@@ -209,12 +227,15 @@ namespace wifi
             default:
             break;
         }
+
+        fsmEventTimerStartedAt = xTaskGetTickCount();
     }
 
     void Mesh::parentBroadcastFsmEvent()
     {
-        if (!hasAddedCandidateParents && !candidateParents.empty())
+        if (!hasAddedNewCandidateParentThisCycle && !candidateParents.empty())
         {
+            ESP_LOGI(TAG, "Processing candidate parents.");
             // all possible parents have replied
             if (const CandidateParent* candidateParent {pickCandidateParent()}; candidateParent != nullptr)
             {
@@ -226,9 +247,8 @@ namespace wifi
 
                 routingSubtable.setParentMac(candidateParent->macAddress);
 
-
                 candidateParents.clear();
-                hasAddedCandidateParents = false;
+                hasAddedNewCandidateParentThisCycle = false;
                 switchState(MeshState::Online);
                 return;
             }
@@ -237,12 +257,13 @@ namespace wifi
         uint8_t data[1]{};
         ParentSearchPacket{} >> data;
 
+        ESP_LOGI(TAG, "Sending parent broadcast");
         if (const esp_err_t err = esp_now_send(broadcastMacArr, data, sizeof(data)); err != ESP_OK)
         {
             ESP_LOGE(TAG, "ESP-NOW broadcast failed: %s", esp_err_to_name(err));
         }
 
-        hasAddedCandidateParents = false;
+        hasAddedNewCandidateParentThisCycle = false;
     }
 
     Mesh::CandidateParent* Mesh::pickCandidateParent() const
