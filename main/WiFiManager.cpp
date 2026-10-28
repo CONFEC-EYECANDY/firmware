@@ -85,12 +85,8 @@ namespace wifi
             {
                 start();
 
-                constexpr MeshEvent event
-                {
-                    .type = MeshEventType::RadioUp,
-                    .data = MeshEventData {},
-                };
-                if (!Mesh::getInstance().sendEvent(&event)) ESP_LOGE(TAG, "Failed to inform Mesh about radio start");
+                MeshEvent event(MeshEventType::RadioUp);
+                if (!Mesh::sendEvent(&event)) ESP_LOGE(TAG, "Failed to inform Mesh about radio start");
 
                 break;
             }
@@ -98,12 +94,8 @@ namespace wifi
             {
                 stop();
 
-                constexpr MeshEvent event
-                {
-                    .type = MeshEventType::RadioDown,
-                    .data = MeshEventData {},
-                };
-                if (!Mesh::getInstance().sendEvent(&event)) ESP_LOGE(TAG, "Failed to inform Mesh about radio stop");
+                MeshEvent event(MeshEventType::RadioDown);
+                if (!Mesh::sendEvent(&event)) ESP_LOGE(TAG, "Failed to inform Mesh about radio stop");
 
                 break;
             }

@@ -3,6 +3,8 @@ idf_component_register(
             "main.cpp"
             "Mesh.cpp"
             "WiFiManager.cpp"
+            "RoutingSubtable.cpp"
+            "MeshPackets.cpp"
 
         PRIV_REQUIRES
             nvs_flash

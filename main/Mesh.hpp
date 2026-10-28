@@ -3,50 +3,38 @@
 
 #include <esp_now.h>
 #include <esp_wifi_types_generic.h>
-
+#include <unordered_set>
 
 #include "config.hpp"
 #include "WiFiManager.hpp"
 #include "MeshEvent.hpp"
+#include "RoutingSubtable.hpp"
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 
 namespace wifi
 {
-    static constexpr uint8_t broadcastMac[6] {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
+    static uint8_t broadcastMacArr[6] {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
+    static const MacAddress broadcastMac{broadcastMacArr};
 
     class Mesh
     {
-        enum class MeshPacketType : uint8_t
+        enum class MeshState : uint8_t
         {
+            Offline,
+            Online,
+            WaitingForChildrenAlive,
+            ContactingMissingChildren,
             LookingForParent,
-            TransferUpData,
         };
-        struct MeshPacket
+        struct CandidateParent
         {
-            explicit MeshPacket(const MeshPacketType packetType, const uint8_t version)
-            {
-                MeshPacket::packetType = packetType;
-                MeshPacket::version = version;
-            }
-            MeshPacketType packetType;
-            uint8_t version;
+            MacAddress macAddress {};
+            int8_t rssi {};
+            uint8_t depth {};
+            uint8_t childrenCount {};
         };
-
-        // used when child is looking for parent
-        struct ParentSearchPacket : MeshPacket
-        {
-            explicit ParentSearchPacket(const uint8_t childrenCount) : MeshPacket(MeshPacketType::LookingForParent, childrenCount)
-            {
-                ParentSearchPacket::childrenCount = childrenCount;
-            };
-            uint8_t childrenCount;
-        };
-
-        
-
-        // used when node notices parent search broadcast
 
     public:
         Mesh(const Mesh&) = delete;
@@ -55,9 +43,8 @@ namespace wifi
         static Mesh& getInstance();
 
         // mesh properties
-        uint8_t parentMAC[6]{};
-        uint8_t childrenMACs[MAX_CHILDREN_PER_NODE][6] {};
-        uint8_t childrenCount {};
+        RoutingSubtable routingSubtable {};
+        TickType_t stateEventTimerStartedAt {};
         bool belongsToMesh {false};
         bool isRootNode {SET_ROOT_NODE};
 
@@ -65,31 +52,49 @@ namespace wifi
         static void runEntry(void* arg);
 
         // interact with mesh task
-        bool sendEvent(const MeshEvent* event) const;
+        static bool sendEvent(const MeshEvent* event);
 
     private:
         Mesh() = default;
         ~Mesh() = default;
+        void run();
 
         TaskHandle_t taskHandle_{};
         QueueHandle_t eventQueue_ = nullptr;
-        MeshEvent currentEvent_{};
+        QueueHandle_t transmitQueue_ = nullptr;
+        MeshState meshState_ {MeshState::Offline};
+        std::unordered_set<MacAddress, MacHash> ephemeralPeers {};
 
-        // event responders
-        void radioUp(const MeshEvent* event);
-        void radioDown(const MeshEvent* event);
-        void transmitData(const MeshEvent* event);
-        void receivedData(const MeshEvent* event);
+        // event system
+        void processQueue(TickType_t processFor);
+
+        void radioUpMeshEvent(const MeshEvent* event);
+        void radioDownMeshEvent(const MeshEvent* event);
+        void transmitDataMeshEvent(const MeshEvent* event);
+        void receivedDataMeshEvent(const MeshEvent* event);
+        void transmissionCallbackEvent(const MeshEvent* event);
 
         // subroutines
-        void searchForParent();
-        void sendAlivePacket(const MeshEvent* event);
+        void respondToParentSearchBroadcast(const ReceivedData& receivedData) const;
+        void receivedParentSearchResponsePacket(const ReceivedData& receivedData);
+        void addNewChild(const ReceivedData& receivedData);
+        CandidateParent* pickCandidateParent() const;
 
-        // esp now callbacks
+        // finite state machine
+        TickType_t getFsmTaskDelay() const;
+        TickType_t nextFsmStateEventIn() const;
+        void switchState(MeshState newState);
+        void processFsmEventTask();
+
+        std::vector<CandidateParent> candidateParents {};
+        bool hasAddedCandidateParents {false};
+        void parentBroadcastFsmEvent();
+
+        // esp now helpers and callbacks
+        static void addEspNowPeer(const MacAddress& macAddress, bool isEphemeral);
+        static void removeEspNowPeer(const MacAddress& macAddress);
         static void onSignalReceived(const esp_now_recv_info_t* info, const uint8_t* data, int length);
         static void onFinishedSending(const wifi_tx_info_t* info, esp_now_send_status_t status);
-
-        void run();
     };
 }
 
