@@ -138,7 +138,7 @@ namespace wifi
 
     void Mesh::respondToParentSearchBroadcast(const ReceivedData& receivedData) const
     {
-        if (!belongsToMesh || !isRootNode || routingSubtable.getChildrenCount() >= MAX_CHILDREN_PER_NODE) return;
+        if (!((belongsToMesh || isRootNode) && routingSubtable.getChildrenCount() < MAX_CHILDREN_PER_NODE)) return;
 
         addEspNowPeer(receivedData.senderMac, true);
 

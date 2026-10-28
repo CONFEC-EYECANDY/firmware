@@ -8,7 +8,7 @@
 #define MAX_CHILDREN_PER_NODE 16
 
 // set this to true for destined root node
-#define SET_ROOT_NODE false
+#define SET_ROOT_NODE true
 
 // task priorities
 #define MESH_TASK_PRIORITY 1
