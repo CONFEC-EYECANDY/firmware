@@ -64,12 +64,15 @@ namespace wifi
 
         void addNode(const Node& node, bool containsNextHop);
         void removeNode(const Node& node);
+        uint8_t getChildrenCount() const;
+        MacAddress getNextHopTo(MacAddress destinationMacAddress);
+
         void setParentMac(MacAddress parentMacAddress);
         MacAddress getParentMac() const;
-        uint8_t getChildrenCount() const;
-        uint8_t getDepth() const;
+        void setMacAddress(MacAddress macAddress);
+        MacAddress getMacAddress() const;
         void setDepth(uint8_t depth);
-        MacAddress getNextHopTo(MacAddress destinationMacAddress);
+        uint8_t getDepth() const;
     };
 }
 

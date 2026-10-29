@@ -1,5 +1,8 @@
 #ifndef FIRMWARE_MESHEVENT_HPP
 #define FIRMWARE_MESHEVENT_HPP
+#include <cstring>
+
+#include "MeshPackets.hpp"
 #include "RoutingSubtable.hpp"
 
 namespace wifi
@@ -27,10 +30,20 @@ namespace wifi
         MacAddress destinationMac;
     };
 
+    struct TransmitData
+    {
+        explicit TransmitData(const MacAddress destAddress, const uint8_t* data, const size_t length) : destinationMac(destAddress), data(data), length(length) {}
+
+        MacAddress destinationMac;
+        const uint8_t* data;
+        size_t length;
+    };
+
     union MeshEventData
     {
         ReceivedData receivedData;
         TransmissionCallbackData transmissionCallbackData;
+        TransmitData transmitData;
     };
 
     struct MeshEvent

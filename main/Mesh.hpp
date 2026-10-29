@@ -43,6 +43,7 @@ namespace wifi
         static Mesh& getInstance();
 
         // mesh properties
+        MacAddress macAddress {};
         RoutingSubtable routingSubtable {};
         TickType_t fsmEventTimerStartedAt {};
         bool belongsToMesh {false};
@@ -70,15 +71,17 @@ namespace wifi
 
         void radioUpMeshEvent(const MeshEvent* event);
         void radioDownMeshEvent(const MeshEvent* event);
-        void transmitDataMeshEvent(const MeshEvent* event);
+        static void transmitDataMeshEvent(const MeshEvent* event);
         void receivedDataMeshEvent(const MeshEvent* event);
         void transmissionCallbackEvent(const MeshEvent* event);
 
         // subroutines
         void respondToParentSearchBroadcast(const ReceivedData& receivedData) const;
-        void receivedParentSearchResponsePacket(const ReceivedData& receivedData);
-        void addNewChild(const ReceivedData& receivedData);
-        bool pickCandidateParent(CandidateParent* parent) const;
+        void receivedParentSearchResponse(const ReceivedData& receivedData);
+        void respondToParentRequest(const ReceivedData& receivedData);
+        void receivedParentRequestResponse(const ReceivedData& receivedData);
+        void receivedSubroutingTableChildAdded(const ReceivedData& receivedData);
+        bool pickCandidateParent(CandidateParent* parent, int* parentIndex) const;
 
         // finite state machine
         TickType_t getFsmTaskDelay() const;
@@ -88,6 +91,7 @@ namespace wifi
 
         std::vector<CandidateParent> candidateParents {};
         bool hasAddedNewCandidateParentThisCycle {false};
+        bool isWaitingForParentResponse {false};
         void parentBroadcastFsmEvent();
 
         // esp now helpers and callbacks

@@ -24,18 +24,6 @@ namespace wifi
         }
     }
 
-    void ParentRequestPacket::operator>>(uint8_t* data) const
-    {
-        data[0] = static_cast<uint8_t>(packetType);
-    }
-
-    void ParentRequestPacket::operator<<(const uint8_t* data)
-    {
-        if (static_cast<MeshPacketType>(data[0]) != MeshPacketType::ParentRequest)
-        {
-            ESP_LOGE(TAG, "Wrong Packet type %u being deserialized into ParentRequestPacket!", static_cast<MeshPacketType>(data[0]));
-        }
-    }
 
     void ParentSearchResponsePacket::operator>>(uint8_t* data) const
     {
@@ -52,5 +40,53 @@ namespace wifi
         }
         childrenCount = data[1];
         depth = data[2];
+    }
+
+    void ParentRequestPacket::operator>>(uint8_t* data) const
+    {
+        data[0] = static_cast<uint8_t>(packetType);
+    }
+
+
+    void ParentRequestPacket::operator<<(const uint8_t* data)
+    {
+        if (static_cast<MeshPacketType>(data[0]) != MeshPacketType::ParentRequest)
+        {
+            ESP_LOGE(TAG, "Wrong Packet type %u being deserialized into ParentRequestPacket!", static_cast<MeshPacketType>(data[0]));
+        }
+    }
+
+    void ParentRequestResponsePacket::operator>>(uint8_t* data) const
+    {
+        data[0] = static_cast<uint8_t>(packetType);
+        data[1] = depth;
+        data[2] = accepted;
+    }
+
+    void ParentRequestResponsePacket::operator<<(const uint8_t* data)
+    {
+        if (static_cast<MeshPacketType>(data[0]) != MeshPacketType::ParentRequestResponse)
+        {
+            ESP_LOGE(TAG, "Wrong Packet type %u being deserialized into ParentRequestResponsePacket!", static_cast<MeshPacketType>(data[0]));
+        }
+        depth = data[1];
+        accepted = data[2];
+    }
+
+    void SubRoutingTableChildAddedPacket::operator>>(uint8_t* data) const
+    {
+        data[0] = static_cast<uint8_t>(packetType);
+        for (int i = 0; i < 6; i++)
+            data[1 + i] = childMacAddress.macAddress[i];
+        for (int i = 0; i < 6; i++)
+            data[7 + i] = childParentMacAddress.macAddress[i];
+    }
+
+    void SubRoutingTableChildAddedPacket::operator<<(const uint8_t* data)
+    {
+        for (int i = 0; i < 6; i++)
+            childMacAddress.macAddress[i] = data[1 + i];
+        for (int i = 0; i < 6; i++)
+            childParentMacAddress.macAddress[i] = data[7 + i];
     }
 }

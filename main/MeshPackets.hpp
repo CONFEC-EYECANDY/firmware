@@ -12,6 +12,8 @@ namespace wifi
         ParentSearch,
         ParentSearchResponse,
         ParentRequest,
+        ParentRequestResponse,
+        SubRoutingTableChildAdded,
     };
 
     struct MeshPacket
@@ -50,6 +52,35 @@ namespace wifi
 
         uint8_t childrenCount;
         uint8_t depth;
+
+        void operator>>(uint8_t* data) const override;
+        void operator<<(const uint8_t* data) override;
+    };
+
+    struct ParentRequestResponsePacket : MeshPacket
+    {
+        ParentRequestResponsePacket() : MeshPacket(MeshPacketType::ParentRequestResponse), accepted(false), depth(0) {}
+        explicit ParentRequestResponsePacket(const bool accepted, const uint8_t depth)
+        : MeshPacket(MeshPacketType::ParentRequestResponse), accepted(accepted), depth(depth) {}
+
+        bool accepted;
+        uint8_t depth;
+
+        void operator>>(uint8_t* data) const override;
+        void operator<<(const uint8_t* data) override;
+    };
+
+    struct SubRoutingTableChildAddedPacket : MeshPacket
+    {
+        SubRoutingTableChildAddedPacket() : MeshPacket(MeshPacketType::SubRoutingTableChildAdded), childMacAddress(),
+                                            childParentMacAddress()
+        {}
+
+        explicit SubRoutingTableChildAddedPacket(const Node& child)
+        : MeshPacket(MeshPacketType::SubRoutingTableChildAdded), childMacAddress(child.macAddress), childParentMacAddress(child.parentMacAddress) {}
+
+        MacAddress childMacAddress;
+        MacAddress childParentMacAddress;
 
         void operator>>(uint8_t* data) const override;
         void operator<<(const uint8_t* data) override;
