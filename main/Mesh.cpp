@@ -13,7 +13,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 
-static auto TAG = "MESH";
+static auto TAG = SET_ROOT_NODE ? "ROOT MESH " NODE_NAME: "MESH " NODE_NAME;
 
 namespace wifi
 {
@@ -57,9 +57,9 @@ namespace wifi
         while (true)
         {
             const TickType_t t = nextFsmStateEventIn();
-            ESP_LOGI(TAG, "processing queue for %" PRIu32"", t);
+            ESP_LOGI(TAG, "Waiting on queue for %" PRIu32" ticks", t);
             processQueue(t);
-            if (nextFsmStateEventIn() <= 0) processFsmEventTask();
+            if (nextFsmStateEventIn() == 0) processFsmEventTask();
         }
     }
 
@@ -67,6 +67,8 @@ namespace wifi
     {
         MeshEvent currentEvent(MeshEventType::Null);
         if (xQueueReceive(eventQueue_, &currentEvent, processFor) == pdFALSE) return;
+
+        ESP_LOGI(TAG, "Queue received task of type %d", currentEvent.type);
 
         switch (currentEvent.type)
         {
@@ -204,7 +206,13 @@ namespace wifi
 
     TickType_t Mesh::nextFsmStateEventIn() const
     {
-        return getFsmTaskDelay() - (xTaskGetTickCount() - fsmEventTimerStartedAt);
+        const TickType_t delay = getFsmTaskDelay();
+        if (delay == portMAX_DELAY) return portMAX_DELAY;
+
+        const TickType_t elapsed = xTaskGetTickCount() - fsmEventTimerStartedAt;
+
+        // since TickType_t is unsigned we need to manually clamp to 0
+        return elapsed >= delay ? 0 : delay - elapsed;
     }
 
     // fsm event tasks
@@ -238,15 +246,17 @@ namespace wifi
         {
             ESP_LOGI(TAG, "Processing candidate parents.");
             // all possible parents have replied
-            if (const CandidateParent* candidateParent {pickCandidateParent()}; candidateParent != nullptr)
+            CandidateParent candidateParent;
+            if (pickCandidateParent(&candidateParent))
             {
-                addEspNowPeer(candidateParent->macAddress, false);
+                addEspNowPeer(candidateParent.macAddress, false);
 
                 uint8_t data[1];
                 ParentRequestPacket{} >> data;
-                esp_now_send(candidateParent->macAddress.macAddress, data, sizeof(data));
+                esp_now_send(candidateParent.macAddress.macAddress, data, sizeof(data));
+                ESP_LOGI(TAG, "Parent request sent");
 
-                routingSubtable.setParentMac(candidateParent->macAddress);
+                routingSubtable.setParentMac(candidateParent.macAddress);
 
                 candidateParents.clear();
                 hasAddedNewCandidateParentThisCycle = false;
@@ -267,12 +277,13 @@ namespace wifi
         hasAddedNewCandidateParentThisCycle = false;
     }
 
-    Mesh::CandidateParent* Mesh::pickCandidateParent() const
+    bool Mesh::pickCandidateParent(CandidateParent* parent) const
     {
-        CandidateParent* parent = nullptr;
-        uint8_t minDepth{0};
-        uint8_t minChildrenCount{0};
-        uint8_t minRssi{0};
+        bool didPickParent = false;
+
+        uint8_t minDepth{127};
+        uint8_t minChildrenCount{127};
+        signed maxRssi{-128};
 
         for (const CandidateParent candidateParent : candidateParents)
         {
@@ -287,19 +298,20 @@ namespace wifi
             minChildrenCount = minChildrenCount > candidateParent.childrenCount ? candidateParent.childrenCount : minChildrenCount;
         }
 
-        for (CandidateParent candidateParent : candidateParents)
+        for (const CandidateParent candidateParent : candidateParents)
         {
             if (candidateParent.rssi < CANDIDATE_PARENT_RSSI_THRESHOLD) continue;
             if (candidateParent.depth > minDepth) continue;
             if (candidateParent.childrenCount > minChildrenCount) continue;
-            if (minRssi > candidateParent.rssi)
+            if (maxRssi < candidateParent.rssi)
             {
-                minRssi = candidateParent.rssi;
-                parent = &candidateParent;
+                maxRssi = candidateParent.rssi;
+                *parent = candidateParent;
+                didPickParent = true;
             }
         }
 
-        return parent;
+        return didPickParent;
     }
 
     void Mesh::addEspNowPeer(const MacAddress& macAddress, const bool isEphemeral = false)

@@ -8,7 +8,7 @@
 #define MAX_CHILDREN_PER_NODE 16
 
 // set this to true for destined root node
-#define SET_ROOT_NODE false
+#define SET_ROOT_NODE true
 
 // task priorities
 #define MESH_TASK_PRIORITY 1
@@ -21,7 +21,7 @@
 #define PARENT_SEARCH_BROADCAST_INTERVAL_MS 1000
 #define MISSING_CHILDREN_CONTACT_PERIOD_MS 100
 #define CHILDREN_ALIVE_TIMEOUT_MS 100
-#define CANDIDATE_PARENT_RSSI_THRESHOLD 10
+#define CANDIDATE_PARENT_RSSI_THRESHOLD (-50)
 
 // wifi config
 #define MAX_WIFI_PENDING_EVENTS 10

@@ -31,7 +31,7 @@ namespace wifi
         struct CandidateParent
         {
             MacAddress macAddress {};
-            int8_t rssi {};
+            signed rssi {};
             uint8_t depth {};
             uint8_t childrenCount {};
         };
@@ -78,7 +78,7 @@ namespace wifi
         void respondToParentSearchBroadcast(const ReceivedData& receivedData) const;
         void receivedParentSearchResponsePacket(const ReceivedData& receivedData);
         void addNewChild(const ReceivedData& receivedData);
-        CandidateParent* pickCandidateParent() const;
+        bool pickCandidateParent(CandidateParent* parent) const;
 
         // finite state machine
         TickType_t getFsmTaskDelay() const;
