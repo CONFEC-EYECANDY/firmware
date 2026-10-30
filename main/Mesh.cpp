@@ -378,6 +378,7 @@ namespace wifi
                 // childrenAliveTaskDone();
             break;
             case MeshState::Online:
+                checkConnection();
             break;
             default:
             break;
