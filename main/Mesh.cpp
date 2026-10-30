@@ -168,7 +168,7 @@ namespace wifi
 
         addEspNowPeer(receivedData.senderMac, true);
 
-        uint8_t data[ParentRequestPacket::size];
+        uint8_t data[ParentSearchResponsePacket::size];
         ParentSearchResponsePacket(routingSubtable.getChildrenCount(), routingSubtable.getDepth()) >> data;
         esp_now_send(receivedData.senderMac.macAddress, data, sizeof(data));
         ESP_LOGI(TAG, "Responded to parent search broadcast");
@@ -212,6 +212,7 @@ namespace wifi
 
             return;
         }
+
         ESP_LOGI(TAG, "Accepting parent request from child %02X:%02X:%02X:%02X:%02X:%02X",    receivedData.senderMac.macAddress[0], receivedData.senderMac.macAddress[1],
                                                                                 receivedData.senderMac.macAddress[2], receivedData.senderMac.macAddress[3],
                                                                                 receivedData.senderMac.macAddress[4], receivedData.senderMac.macAddress[5]);
@@ -244,7 +245,7 @@ namespace wifi
 
     void Mesh::respondToConnectionCheck(const ReceivedData& receivedData)
     {
-        uint8_t data[ParentRequestResponsePacket::size];
+        uint8_t data[ConnectionCheckResponsePacket::size];
         ConnectionCheckResponsePacket() >> data;
 
         MeshEvent event(MeshEventType::TransmitData);
@@ -273,7 +274,7 @@ namespace wifi
         routingSubtable.setParentMac(receivedData.senderMac);
         routingSubtable.setDepth(parentRequestResponsePacket.depth + 1);
 
-        ESP_LOGI(TAG, "Successfully connected to parent at %d with rssi %d", routingSubtable.getDepth(), receivedData.rssi);
+        ESP_LOGI(TAG, "Successfully connected to parent at depth %d with rssi %d", routingSubtable.getDepth(), receivedData.rssi);
 
         isWaitingForParentResponse = false;
         hasAddedNewCandidateParentThisCycle = false;
@@ -363,6 +364,7 @@ namespace wifi
     // fsm event tasks
     void Mesh::processFsmEventTask()
     {
+        ESP_LOGI(TAG, "%d", routingSubtable.getDepth());
         switch (meshState_)
         {
             case MeshState::Offline:
@@ -486,9 +488,9 @@ namespace wifi
     {
         bool didPickParent = false;
 
-        uint8_t minDepth{127};
-        uint8_t minChildrenCount{127};
-        signed maxRssi{-128};
+        uint8_t minDepth{255};
+        uint8_t minChildrenCount{255};
+        signed maxRssi{-6767};
 
         for (const CandidateParent candidateParent : candidateParents)
         {

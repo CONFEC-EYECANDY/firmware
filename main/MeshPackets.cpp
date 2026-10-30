@@ -43,7 +43,6 @@ namespace wifi
         depth = data[2];
     }
 
-
     // Parent request packet
     void ParentRequestPacket::operator>>(uint8_t* data) const
     {
