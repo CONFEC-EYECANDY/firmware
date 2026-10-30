@@ -227,7 +227,7 @@ namespace wifi
         routingSubtable.addNode(newChild, true);
         addEspNowPeer(receivedData.senderMac, false);
 
-        uint8_t data[ParentRequestPacket::size];
+        uint8_t data[ParentRequestResponsePacket::size];
         ParentRequestResponsePacket(true, routingSubtable.getDepth()) >> data;
         esp_now_send(receivedData.senderMac.macAddress, data, sizeof(data));
 
@@ -364,7 +364,6 @@ namespace wifi
     // fsm event tasks
     void Mesh::processFsmEventTask()
     {
-        ESP_LOGI(TAG, "%d", routingSubtable.getDepth());
         switch (meshState_)
         {
             case MeshState::Offline:
