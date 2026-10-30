@@ -97,7 +97,7 @@ namespace wifi
         void parentBroadcastFsmEvent();
 
         std::unordered_map<MacAddress, signed, MacHash> respondedChildren{};
-        bool isWaitingForChildrenAlive;
+        bool isWaitingForChildrenAlive {false};
         void checkConnection();
 
         // esp now helpers and callbacks
