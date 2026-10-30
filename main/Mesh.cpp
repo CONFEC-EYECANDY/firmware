@@ -39,7 +39,7 @@ namespace wifi
             != pdPASS) return ESP_FAIL;
 
         constexpr WiFiEvent event{.type = WiFiEventType::StartRadio, .data = nullptr};
-        WiFiManager::getInstance().sendEvent(&event);
+        if (!WiFiManager::getInstance().sendEvent(&event)) return ESP_FAIL;
 
         esp_read_mac(macAddress.macAddress, ESP_MAC_WIFI_STA);
         routingSubtable.setMacAddress(macAddress);
@@ -63,7 +63,7 @@ namespace wifi
         while (true)
         {
             const TickType_t t = nextFsmStateEventIn();
-            ESP_LOGI(TAG, "Waiting on queue for %" PRIu32" ticks", t);
+            // ESP_LOGI(TAG, "Waiting on queue for %" PRIu32" ticks", t);
             processQueue(t);
             if (nextFsmStateEventIn() == 0) processFsmEventTask();
         }
@@ -74,7 +74,7 @@ namespace wifi
         MeshEvent currentEvent(MeshEventType::Null);
         if (xQueueReceive(eventQueue_, &currentEvent, processFor) == pdFALSE) return;
 
-        ESP_LOGI(TAG, "Queue received task of type %d", currentEvent.type);
+        // ESP_LOGI(TAG, "Queue received task of type %d", currentEvent.type);
 
         switch (currentEvent.type)
         {
@@ -138,8 +138,14 @@ namespace wifi
         case MeshPacketType::ParentRequestResponse:
             receivedParentRequestResponse(receivedData);
             break;
-        case MeshPacketType::SubRoutingTableChildAdded:
-            receivedSubroutingTableChildAdded(receivedData);
+        case MeshPacketType::RoutingSubtableChanged:
+            receivedSubroutingTableChanged(receivedData);
+            break;
+        case MeshPacketType::ConnectionCheck:
+            respondToConnectionCheck(receivedData);
+            break;
+        case MeshPacketType::ConnectionCheckResponse:
+            receivedConnectionCheckResponse(receivedData);
             break;
         default: ;
         }
@@ -162,10 +168,10 @@ namespace wifi
 
         addEspNowPeer(receivedData.senderMac, true);
 
-        uint8_t data[3]{};
+        uint8_t data[ParentRequestPacket::size];
         ParentSearchResponsePacket(routingSubtable.getChildrenCount(), routingSubtable.getDepth()) >> data;
         esp_now_send(receivedData.senderMac.macAddress, data, sizeof(data));
-        ESP_LOGI(TAG, "Responded to Parent Search Broadcast");
+        ESP_LOGI(TAG, "Responded to parent search broadcast");
     }
 
     void Mesh::receivedParentSearchResponse(const ReceivedData& receivedData)
@@ -184,7 +190,11 @@ namespace wifi
         if (std::ranges::any_of(candidateParents,
                                 [candidateParent](const CandidateParent& p) { return p.macAddress == candidateParent.macAddress; })) return;
 
-        ESP_LOGI(TAG, "Added Candidate Parent");
+        ESP_LOGI(TAG, "Added candidate parent %02X:%02X:%02X:%02X:%02X:%02X with rssi %d",    receivedData.senderMac.macAddress[0], receivedData.senderMac.macAddress[1],
+                                                                                        receivedData.senderMac.macAddress[2], receivedData.senderMac.macAddress[3],
+                                                                                        receivedData.senderMac.macAddress[4], receivedData.senderMac.macAddress[5],
+                                                                                        receivedData.rssi);
+
         candidateParents.push_back(candidateParent);
         hasAddedNewCandidateParentThisCycle = true;
     }
@@ -193,17 +203,21 @@ namespace wifi
     {
         if (routingSubtable.getChildrenCount() + 1 > MAX_CHILDREN_PER_NODE)
         {
-            ESP_LOGI(TAG, "Too many children rejecting request");
+            ESP_LOGI(TAG, "Too many children, rejecting parent request");
             addEspNowPeer(receivedData.senderMac, true);
 
-            uint8_t data[3];
+            uint8_t data[ParentRequestResponsePacket::size];
             ParentRequestResponsePacket(false, routingSubtable.getDepth()) >> data;
             esp_now_send(receivedData.senderMac.macAddress, data, sizeof(data));
+
+            return;
         }
-        ESP_LOGI(TAG, "Accepting child request");
+        ESP_LOGI(TAG, "Accepting parent request from child %02X:%02X:%02X:%02X:%02X:%02X",    receivedData.senderMac.macAddress[0], receivedData.senderMac.macAddress[1],
+                                                                                receivedData.senderMac.macAddress[2], receivedData.senderMac.macAddress[3],
+                                                                                receivedData.senderMac.macAddress[4], receivedData.senderMac.macAddress[5]);
 
         // add child
-        const Node newChild
+        Node newChild
         {
             .macAddress = receivedData.senderMac,
             .parentMacAddress = macAddress,
@@ -211,13 +225,14 @@ namespace wifi
         };
         routingSubtable.addNode(newChild, true);
         addEspNowPeer(receivedData.senderMac, false);
-        uint8_t data[3];
+
+        uint8_t data[ParentRequestPacket::size];
         ParentRequestResponsePacket(true, routingSubtable.getDepth()) >> data;
         esp_now_send(receivedData.senderMac.macAddress, data, sizeof(data));
 
         // update parent
         auto* subRoutingTableUpdateData = new uint8_t[13];
-        SubRoutingTableChildAddedPacket(newChild) >> subRoutingTableUpdateData;
+        SubroutingTableChangedPacket(&newChild.macAddress, &newChild.parentMacAddress) >> subRoutingTableUpdateData;
 
         MeshEvent event(MeshEventType::TransmitData);
         event.data.transmitData.destinationMac = routingSubtable.getParentMac();
@@ -225,6 +240,24 @@ namespace wifi
         event.data.transmitData.length = sizeof(subRoutingTableUpdateData);
 
         sendEvent(&event);
+    }
+
+    void Mesh::respondToConnectionCheck(const ReceivedData& receivedData)
+    {
+        uint8_t data[ParentRequestResponsePacket::size];
+        ConnectionCheckResponsePacket() >> data;
+
+        MeshEvent event(MeshEventType::TransmitData);
+        event.data.transmitData.destinationMac = receivedData.senderMac;
+        event.data.transmitData.data = data;
+        event.data.transmitData.length = sizeof(data);
+
+        sendEvent(&event);
+    }
+
+    void Mesh::receivedConnectionCheckResponse(const ReceivedData& receivedData)
+    {
+        respondedChildren[receivedData.senderMac] = receivedData.rssi;
     }
 
     void Mesh::receivedParentRequestResponse(const ReceivedData& receivedData)
@@ -240,7 +273,7 @@ namespace wifi
         routingSubtable.setParentMac(receivedData.senderMac);
         routingSubtable.setDepth(parentRequestResponsePacket.depth + 1);
 
-        ESP_LOGI(TAG, "Successfully connected to Parent with depth %d", routingSubtable.getDepth());
+        ESP_LOGI(TAG, "Successfully connected to parent at %d with rssi %d", routingSubtable.getDepth(), receivedData.rssi);
 
         isWaitingForParentResponse = false;
         hasAddedNewCandidateParentThisCycle = false;
@@ -249,32 +282,44 @@ namespace wifi
         switchState(MeshState::Online);
     }
 
-    void Mesh::receivedSubroutingTableChildAdded(const ReceivedData& receivedData)
+    void Mesh::receivedSubroutingTableChanged(const ReceivedData& receivedData)
     {
         ESP_LOGI(TAG, "Subrouting Table Child Added");
 
-        SubRoutingTableChildAddedPacket packet;
+        SubroutingTableChangedPacket packet;
         packet << receivedData.data;
 
-
-        Node newChild
+        for (int i = 0; i < packet.addedChildrenCount; i++)
         {
-            .macAddress = packet.childMacAddress,
-            .parentMacAddress = packet.childParentMacAddress,
-            .nextHopMacAddress = receivedData.senderMac,
-        };
+            Node newChild
+            {
+                .macAddress = packet.addedChildren[i],
+                .parentMacAddress = packet.addedChildrenParents[i],
+                .nextHopMacAddress = receivedData.senderMac,
+            };
 
-        routingSubtable.addNode(newChild, true);
+            routingSubtable.addNode(newChild, true);
+        }
 
-        if (isRootNode) return;
+        for (int i = 0; i < packet.removedChildrenCount; i++)
+        {
+            routingSubtable.removeNode(&packet.removedChildren[i]);
+        }
 
-        // forward update to parent
-        MeshEvent event(MeshEventType::TransmitData);
-        event.data.transmitData.destinationMac = routingSubtable.getParentMac();
-        event.data.transmitData.data = receivedData.data;
-        event.data.transmitData.length = sizeof(receivedData.data);
+        // forward update to parent if not root node
+        if (!isRootNode)
+        {
+            MeshEvent event(MeshEventType::TransmitData);
+            event.data.transmitData.destinationMac = routingSubtable.getParentMac();
+            event.data.transmitData.data = receivedData.data;
+            event.data.transmitData.length = sizeof(receivedData.data);
 
-        sendEvent(&event);
+            sendEvent(&event);
+        }
+
+        delete[] packet.addedChildren;
+        delete[] packet.addedChildrenParents;
+        delete[] packet.removedChildren;
     }
 
     // fsm
@@ -282,7 +327,7 @@ namespace wifi
     {
         meshState_ = newState;
         fsmEventTimerStartedAt = xTaskGetTickCount();
-        ESP_LOGI(TAG, "State switched, new state %d", newState);
+        ESP_LOGI(TAG, "State switched to %d", newState);
     }
 
     TickType_t Mesh::getFsmTaskDelay() const
@@ -298,7 +343,7 @@ namespace wifi
             case MeshState::WaitingForChildrenAlive:
                 return pdMS_TO_TICKS(CHILDREN_ALIVE_TIMEOUT_MS);
             case MeshState::Online:
-                return portMAX_DELAY;
+                return pdMS_TO_TICKS(CONNECTION_CHECK_INTERVAL_MS);
             default:
                 return portMAX_DELAY;
         }
@@ -344,7 +389,7 @@ namespace wifi
     {
         if ((!hasAddedNewCandidateParentThisCycle || isWaitingForParentResponse) && !candidateParents.empty())
         {
-            ESP_LOGI(TAG, "Processing candidate parents.");
+            ESP_LOGI(TAG, "Processing candidate parents");
             // all possible parents have replied
             CandidateParent candidateParent;
             int parentIndex;
@@ -352,7 +397,7 @@ namespace wifi
             {
                 addEspNowPeer(candidateParent.macAddress, false);
 
-                uint8_t data[1];
+                uint8_t data[ParentRequestPacket::size];
                 ParentRequestPacket{} >> data;
                 esp_now_send(candidateParent.macAddress.macAddress, data, sizeof(data));
                 ESP_LOGI(TAG, "Parent request sent");
@@ -367,16 +412,74 @@ namespace wifi
         // this line runs if we were waiting for parent response and ran out of candidate parents cuz they stopped replying
         isWaitingForParentResponse = false;
 
-        uint8_t data[1]{};
+        uint8_t data[ParentSearchPacket::size];
         ParentSearchPacket{} >> data;
 
         ESP_LOGI(TAG, "Sending parent broadcast");
         if (const esp_err_t err = esp_now_send(broadcastMacArr, data, sizeof(data)); err != ESP_OK)
         {
-            ESP_LOGE(TAG, "ESP-NOW broadcast failed: %s", esp_err_to_name(err));
+            ESP_LOGE(TAG, "Parent broadcast failed: %s", esp_err_to_name(err));
         }
 
         hasAddedNewCandidateParentThisCycle = false;
+    }
+
+    void Mesh::checkConnection()
+    {
+        if (isWaitingForChildrenAlive)
+        {
+            std::vector<MacAddress*> childrenToRemove{};
+            for (Node* node : routingSubtable.getChildren())
+            {
+                if (!respondedChildren.contains(node->macAddress))
+                {
+                    ESP_LOGI(TAG, "Child %02X:%02X:%02X:%02X:%02X:%02X did not respond",    node->macAddress.macAddress[0], node->macAddress.macAddress[1],
+                                                                                               node->macAddress.macAddress[2], node->macAddress.macAddress[3],
+                                                                                               node->macAddress.macAddress[4], node->macAddress.macAddress[5]);
+
+                    childrenToRemove.push_back(&node->macAddress);
+                    continue;
+                }
+
+                ESP_LOGI(TAG, "Child %02X:%02X:%02X:%02X:%02X:%02X is within range with rssi %d", node->macAddress.macAddress[0], node->macAddress.macAddress[1],
+                                                                                               node->macAddress.macAddress[2], node->macAddress.macAddress[3],
+                                                                                               node->macAddress.macAddress[4], node->macAddress.macAddress[5],
+                                                                                               respondedChildren[node->macAddress]);
+            }
+
+            MacAddress childrenToRemoveArr[childrenToRemove.size()];
+            for (int i = 0; i < childrenToRemove.size(); i++)
+            {
+                const MacAddress* child = childrenToRemove[i];
+                esp_now_del_peer(child->macAddress);
+                routingSubtable.removeNode(child);
+                childrenToRemoveArr[i] = *child;
+            }
+
+            uint8_t data[SubroutingTableChangedPacket::getSize(0, childrenToRemove.size())];
+            SubroutingTableChangedPacket(childrenToRemoveArr, childrenToRemove.size()) >> data;
+
+            MeshEvent event(MeshEventType::TransmitData);
+            event.data.transmitData.destinationMac = routingSubtable.getParentMac();
+            event.data.transmitData.data = data;
+            event.data.transmitData.length = sizeof(data);
+            sendEvent(&event);
+
+            isWaitingForChildrenAlive = false;
+        }
+
+        respondedChildren.clear();
+        respondedChildren.reserve(routingSubtable.getChildrenCount());
+
+        uint8_t data[ConnectionCheckPacket::size];
+        ConnectionCheckPacket{} >> data;
+
+        for (Node* node : routingSubtable.getChildren())
+        {
+            esp_now_send(node->macAddress.macAddress, data, sizeof(data));
+        }
+
+        isWaitingForChildrenAlive = true;
     }
 
     bool Mesh::pickCandidateParent(CandidateParent* parent, int* parentIndex) const
@@ -430,7 +533,7 @@ namespace wifi
         peer.encrypt = false;
 
         if (const esp_err_t err = esp_now_add_peer(&peer); err != ESP_OK)
-            ESP_LOGE("Mesh", "Failed to add peer: %s",esp_err_to_name(err));
+            ESP_LOGE("Mesh", "Failed to add peer %s",esp_err_to_name(err));
     }
 
     void Mesh::removeEspNowPeer(const MacAddress& macAddress)

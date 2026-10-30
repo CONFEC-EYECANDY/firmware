@@ -9,12 +9,14 @@
 #include <vector>
 #include <sys/types.h>
 
+#include "config.hpp"
+
 namespace wifi
 {
     struct MacAddress
     {
         MacAddress() = default;
-        explicit MacAddress(uint8_t macAddress[6]);
+        explicit MacAddress(const uint8_t macAddress[6]);
 
         uint8_t macAddress[6];
 
@@ -56,6 +58,7 @@ namespace wifi
         MacAddress parentMacAddress_{};
         MacAddress macAddress_{};
         uint8_t depth_{};
+        std::vector<Node*> children_ {};
         std::unordered_map<MacAddress, Node, MacHash> nodeMap_{};
 
     public:
@@ -63,7 +66,7 @@ namespace wifi
         ~RoutingSubtable() = default;
 
         void addNode(const Node& node, bool containsNextHop);
-        void removeNode(const Node& node);
+        void removeNode(const MacAddress* macAddress);
         uint8_t getChildrenCount() const;
         MacAddress getNextHopTo(MacAddress destinationMacAddress);
 
@@ -73,6 +76,7 @@ namespace wifi
         MacAddress getMacAddress() const;
         void setDepth(uint8_t depth);
         uint8_t getDepth() const;
+        std::vector<Node*> getChildren() const;
     };
 }
 

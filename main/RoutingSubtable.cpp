@@ -28,12 +28,17 @@ namespace wifi
 
     uint8_t RoutingSubtable::getChildrenCount() const
     {
-        return nodeMap_.size();
+        return children_.size();
     }
 
     uint8_t RoutingSubtable::getDepth() const
     {
         return depth_;
+    }
+
+    std::vector<Node*> RoutingSubtable::getChildren() const
+    {
+        return children_;
     }
 
     void RoutingSubtable::setDepth(const uint8_t depth)
@@ -54,7 +59,7 @@ namespace wifi
         return parentMacAddress_;
     }
 
-    MacAddress::MacAddress(uint8_t macAddress[6]) : macAddress{}
+    MacAddress::MacAddress(const uint8_t macAddress[6]) : macAddress{}
     {
         memcpy(MacAddress::macAddress, macAddress, 6);
     }
@@ -62,6 +67,9 @@ namespace wifi
     void RoutingSubtable::addNode(const Node& node, const bool containsNextHop = false)
     {
         nodeMap_[node.macAddress] = node;
+
+        if (node.parentMacAddress == macAddress_) children_.push_back(&nodeMap_[node.macAddress]);
+
         if (containsNextHop) return;
 
         auto searchResult = nodeMap_.find(node.macAddress);
@@ -77,8 +85,10 @@ namespace wifi
         }
     }
 
-    void RoutingSubtable::removeNode(const Node& node)
+    void RoutingSubtable::removeNode(const MacAddress* macAddress)
     {
-        nodeMap_.erase(node.macAddress);
+        if (nodeMap_[*macAddress].parentMacAddress == macAddress_)
+            children_.erase(std::ranges::find(children_.begin(), children_.end(), &nodeMap_[*macAddress]));
+        nodeMap_.erase(*macAddress);
     }
 }

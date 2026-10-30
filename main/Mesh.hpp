@@ -15,8 +15,8 @@
 
 namespace wifi
 {
-    static uint8_t broadcastMacArr[6] {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
-    static const MacAddress broadcastMac{broadcastMacArr};
+    static constexpr uint8_t broadcastMacArr[6] {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
+    static MacAddress broadcastMac{broadcastMacArr};
 
     class Mesh
     {
@@ -79,8 +79,10 @@ namespace wifi
         void respondToParentSearchBroadcast(const ReceivedData& receivedData) const;
         void receivedParentSearchResponse(const ReceivedData& receivedData);
         void respondToParentRequest(const ReceivedData& receivedData);
+        static void respondToConnectionCheck(const ReceivedData& receivedData);
+        void receivedConnectionCheckResponse(const ReceivedData& receivedData);
         void receivedParentRequestResponse(const ReceivedData& receivedData);
-        void receivedSubroutingTableChildAdded(const ReceivedData& receivedData);
+        void receivedSubroutingTableChanged(const ReceivedData& receivedData);
         bool pickCandidateParent(CandidateParent* parent, int* parentIndex) const;
 
         // finite state machine
@@ -93,6 +95,10 @@ namespace wifi
         bool hasAddedNewCandidateParentThisCycle {false};
         bool isWaitingForParentResponse {false};
         void parentBroadcastFsmEvent();
+
+        std::unordered_map<MacAddress, signed, MacHash> respondedChildren{};
+        bool isWaitingForChildrenAlive;
+        void checkConnection();
 
         // esp now helpers and callbacks
         static void addEspNowPeer(const MacAddress& macAddress, bool isEphemeral);
