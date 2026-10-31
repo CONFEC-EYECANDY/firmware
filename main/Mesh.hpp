@@ -43,7 +43,6 @@ namespace wifi
         static Mesh& getInstance();
 
         // mesh properties
-        MacAddress macAddress {};
         RoutingSubtable routingSubtable {};
         TickType_t fsmEventTimerStartedAt {};
         bool belongsToMesh {false};
@@ -54,6 +53,7 @@ namespace wifi
 
         // interact with mesh task
         static bool sendEvent(const MeshEvent* event);
+        static bool transmitData(const MacAddress& destination, const uint8_t* data, size_t length);
 
     private:
         Mesh() = default;
@@ -64,7 +64,7 @@ namespace wifi
         QueueHandle_t eventQueue_ = nullptr;
         QueueHandle_t transmitQueue_ = nullptr;
         MeshState meshState_ {MeshState::Offline};
-        std::unordered_set<MacAddress, MacHash> ephemeralPeers {};
+        std::unordered_set<MacAddress, MacHash>  ephemeralPeers {};
 
         // event system
         void processQueue(TickType_t processFor);
@@ -96,7 +96,7 @@ namespace wifi
         bool isWaitingForParentResponse {false};
         void parentBroadcastFsmEvent();
 
-        std::unordered_map<MacAddress, signed, MacHash> respondedChildren{};
+        std::unordered_map<MacAddress, signed, MacHash> respondedChildren {};
         bool isWaitingForChildrenAlive {false};
         void checkConnection();
 

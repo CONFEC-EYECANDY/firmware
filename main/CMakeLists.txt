@@ -5,6 +5,7 @@ idf_component_register(
             "WiFiManager.cpp"
             "RoutingSubtable.cpp"
             "MeshPackets.cpp"
+            "MacAddress.cpp"
 
         PRIV_REQUIRES
             nvs_flash

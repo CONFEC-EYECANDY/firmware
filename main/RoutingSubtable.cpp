@@ -1,5 +1,6 @@
 #include "RoutingSubtable.hpp"
 
+#include <algorithm>
 #include <esp_log.h>
 #include <vector>
 
@@ -7,88 +8,62 @@ namespace wifi
 {
     static auto TAG = "RoutingSubtable";
 
-    void RoutingSubtable::setParentMac(const MacAddress parentMacAddress)
+    void RoutingSubtable::addNode(const MacAddress& nodeMac, const MacAddress& nodeParentMac)
     {
-        parentMacAddress_ = parentMacAddress;
-    }
-    MacAddress RoutingSubtable::getParentMac() const
-    {
-        return parentMacAddress_;
+        if (nodeMap.contains(nodeMac)) return;
+
+        const Node node(nodeMac, nodeParentMac);
+        nodeMap[node.macAddress] = node;
+        nodeMap[node.macAddress].nextHopMacAddress = getNextHopMac(node.macAddress);
+
+        if (node.parentMacAddress == macAddress)
+            children.push_back(node.macAddress);
     }
 
-    void RoutingSubtable::setMacAddress(const MacAddress macAddress)
+    void RoutingSubtable::addNode(const MacAddress& nodeMac, const MacAddress& nodeParentMac, const MacAddress& nextHopMac)
     {
-        macAddress_ = macAddress;
+        if (nodeMap.contains(nodeMac)) return;
+
+        const Node node(nodeMac, nodeParentMac, nextHopMac);
+        nodeMap[node.macAddress] = node;
+
+        if (node.parentMacAddress == macAddress)
+            children.push_back(node.macAddress);
     }
 
-    MacAddress RoutingSubtable::getMacAddress() const
+    void RoutingSubtable::removeNode(const MacAddress& nodeMacAddress)
     {
-        return macAddress_;
+        if (nodeMap[nodeMacAddress].parentMacAddress == macAddress)
+            children.erase(std::ranges::find(children.begin(), children.end(), nodeMacAddress));
+
+        nodeMap.erase(nodeMacAddress);
     }
 
-    uint8_t RoutingSubtable::getChildrenCount() const
+    MacAddress RoutingSubtable::getNextHopTo(const MacAddress& destinationMacAddress)
     {
-        return children_.size();
-    }
-
-    uint8_t RoutingSubtable::getDepth() const
-    {
-        return depth_;
-    }
-
-    std::vector<Node*> RoutingSubtable::getChildren() const
-    {
-        return children_;
-    }
-
-    void RoutingSubtable::setDepth(const uint8_t depth)
-    {
-        depth_ = depth;
-    }
-
-    MacAddress RoutingSubtable::getNextHopTo(const MacAddress destinationMacAddress)
-    {
-        if (destinationMacAddress == macAddress_)
+        if (destinationMacAddress == macAddress)
         {
             ESP_LOGE(TAG, "Routing requested to self!");
-            return macAddress_;
+            return macAddress;
         }
 
-        if (nodeMap_.contains(destinationMacAddress))
-            return nodeMap_[destinationMacAddress].nextHopMacAddress;
-        return parentMacAddress_;
+        if (const auto it = nodeMap.find(destinationMacAddress); it != nodeMap.end())
+            return it->second.nextHopMacAddress;
+
+        return parentMacAddress;
     }
 
-    MacAddress::MacAddress(const uint8_t macAddress[6]) : macAddress{}
+    MacAddress RoutingSubtable::getNextHopMac(const MacAddress& nodeMacAddress) const
     {
-        memcpy(MacAddress::macAddress, macAddress, 6);
-    }
-
-    void RoutingSubtable::addNode(const Node& node, const bool containsNextHop = false)
-    {
-        nodeMap_[node.macAddress] = node;
-
-        if (node.parentMacAddress == macAddress_) children_.push_back(&nodeMap_[node.macAddress]);
-
-        if (containsNextHop) return;
-
-        auto searchResult = nodeMap_.find(node.macAddress);
+        auto searchResult = nodeMap.find(nodeMacAddress);
         while (true)
         {
-            if (searchResult->second.parentMacAddress == macAddress_)
+            if (searchResult->second.parentMacAddress == macAddress)
             {
-                nodeMap_[node.macAddress].nextHopMacAddress = searchResult->first;
-                break;
+                return searchResult->first;
             }
 
-            searchResult = nodeMap_.find(searchResult->second.parentMacAddress);
+            searchResult = nodeMap.find(searchResult->second.parentMacAddress);
         }
-    }
-
-    void RoutingSubtable::removeNode(const MacAddress* macAddress)
-    {
-        if (nodeMap_[*macAddress].parentMacAddress == macAddress_)
-            children_.erase(std::ranges::find(children_.begin(), children_.end(), &nodeMap_[*macAddress]));
-        nodeMap_.erase(*macAddress);
     }
 }

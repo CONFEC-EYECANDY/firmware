@@ -77,45 +77,52 @@ namespace wifi
     // subrouting table child added packet
     void SubroutingTableChangedPacket::operator>>(uint8_t* data) const
     {
-        data[0] = static_cast<uint8_t>(packetType);
-        data[1] = addedChildrenCount;
-        data[2] = removedChildrenCount;
+        size_t i = 0;
+        data[i++] = static_cast<uint8_t>(packetType);
+        data[i++] = addedChildren.size();
+        data[i++] = removedChildren.size();
 
-        for (int j = 3; j < 3 + addedChildrenCount; j++)
+        for (size_t j = 0; j < addedChildren.size(); j++)
         {
-            for (int i = 0; i < 6; i++)
-                data[j + 1 + i] = addedChildren[j].macAddress[i];
-            for (int i = 0; i < 6; i++)
-                data[j + 7 + i] = addedChildrenParents[j].macAddress[i];
+            for (size_t k = 0; k < 6; k++)
+                data[i++] = addedChildren[j].address[k];
+            for (size_t k = 0; k < 6; k++)
+                data[i++] = addedChildrenParents[j].address[k];
         }
 
-        for (int j = addedChildrenCount * 12 + 3; j < addedChildrenCount * 12 + 3 + removedChildrenCount; j++)
+        for (auto j : removedChildren)
         {
-            for (int i = 0; i < 6; i++)
-                data[j + 1 + i] = removedChildren[j].macAddress[i];
+            for (size_t k = 0; k < 6; k++)
+                data[i++] = j.address[k];
         }
     }
+
     void SubroutingTableChangedPacket::operator<<(const uint8_t* data)
     {
-        addedChildrenCount = data[1];
-        removedChildrenCount = data[2];
+        size_t i = 1;
+        addedChildren.clear();
+        addedChildrenParents.clear();
+        removedChildren.clear();
 
-        addedChildren = new MacAddress[addedChildrenCount];
-        addedChildrenParents = new MacAddress[addedChildrenCount];
-        removedChildren = new MacAddress[removedChildrenCount];
+        const int addedChildrenCount = data[i++];
+        const int removedChildrenCount = data[i++];
 
-        for (int j = 3; j < 3 + addedChildrenCount; j++)
+        addedChildren.reserve(addedChildrenCount);
+        addedChildrenParents.reserve(addedChildrenCount);
+        removedChildren.reserve(removedChildrenCount);
+
+        for (int j = 0; j < addedChildrenCount; j++)
         {
-            for (int i = 0; i < 6; i++)
-                addedChildren[j].macAddress[i] = data[j + 1 + i];
-            for (int i = 0; i < 6; i++)
-                addedChildrenParents[j].macAddress[i] = data[j + 7 + i];
+            addedChildren.emplace_back(&data[i]);
+            i += 6;
+            addedChildrenParents.emplace_back(&data[i]);
+            i += 6;
         }
 
-        for (int j = addedChildrenCount * 12 + 3; j < addedChildrenCount * 12 + 3 + removedChildrenCount; j++)
+        for (int j = 0; j < removedChildrenCount; j++)
         {
-            for (int i = 0; i < 6; i++)
-                removedChildren[j].macAddress[i]= data[j + 1 + i];
+            removedChildren.emplace_back(&data[i]);
+            i += 6;
         }
     }
 
