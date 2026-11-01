@@ -9,9 +9,16 @@ The installer creates its own Python environment and puts `fw` on PATH.
 The repository must be **public**, with GitHub Actions enabled and repository
 policy allowing the workflow's `contents: write` permission to create Releases.
 The workflow builds with ESP-IDF pinned to
-`4d59230ddff16327812782151ef0afef202dc6d7`, tests the CLI on Linux/Windows, and
+`4d59230ddff16327812782151ef0afef202dc6d7` and
 publishes a new Release for successful builds of `main` (push or manual run).
 Other branches build and upload Actions artifacts but do not publish Releases.
+
+Push builds do not run the test suite. Run it when needed using **Actions →
+Tests (manual) → Run workflow**; that workflow checks Linux and Windows and does
+not block firmware releases. Firmware builds cache ESP-IDF/the toolchain and
+compiled objects (ccache). The first run, or a run after cache eviction, is still
+a full setup/build. Compiler cache statistics appear in the build log. CLI
+packaging installs build tools only, not the CLI's runtime dependencies.
 
 Each release contains `firmware-esp32c3-a.zip`, `firmware-esp32c3-b.zip`, etc.,
 the Python CLI wheel, and the installer/uninstaller files. Uploads happen to a draft; only the complete release becomes

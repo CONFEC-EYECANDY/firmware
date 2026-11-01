@@ -60,7 +60,7 @@ class InstallerTests(unittest.TestCase):
             with patch.dict(os.environ, {"TERMUX_VERSION": "test"}), patch.object(installer.sys, "argv", args), patch.object(installer.venv, "EnvBuilder") as builder, patch.object(installer.subprocess, "run") as run:
                 installer.main()
             self.assertTrue(builder.call_args.kwargs["system_site_packages"])
-            self.assertEqual(run.call_args_list[0].args[0][-1], str(wheel) + "[android]")
+            self.assertEqual(run.call_args_list[0].args[0][-1], str(wheel.resolve()) + "[android]")
 
 
 if __name__ == "__main__":
