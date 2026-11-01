@@ -106,9 +106,12 @@ namespace wifi
         {
         }
 
-        explicit SubroutingTableChangedPacket(
-            std::vector<MacAddress> addedChildren, std::vector<MacAddress> addedChildrenParents, std::vector<MacAddress> removedChildren) : MeshPacket(MeshPacketType::RoutingSubtableChanged),
-            addedChildren(std::move(addedChildren)), addedChildrenParents(std::move(addedChildrenParents)), removedChildren(std::move(removedChildren)) {}
+        explicit SubroutingTableChangedPacket(std::vector<MacAddress> addedChildren, std::vector<MacAddress> addedChildrenParents, std::vector<MacAddress> removedChildren) :
+            MeshPacket(MeshPacketType::RoutingSubtableChanged),
+            addedChildren(std::move(addedChildren)),
+            addedChildrenParents(std::move(addedChildrenParents)),
+            removedChildren(std::move(removedChildren)
+        ) {}
 
         explicit SubroutingTableChangedPacket(MacAddress addedChild, MacAddress addedChildParent) :
             SubroutingTableChangedPacket({addedChild}, {addedChildParent}, {}) {}
@@ -121,7 +124,7 @@ namespace wifi
 
         static constexpr size_t getSize(const uint8_t addedChildrenCount, const uint8_t removedChildrenCount)
         {
-            return 2 + addedChildrenCount * 12 + removedChildrenCount * 6;
+            return 3 + addedChildrenCount * 12 + removedChildrenCount * 6;
         }
 
         void operator>>(uint8_t* data) const override;

@@ -15,7 +15,7 @@
 #define WIFI_TASK_PRIORITY 1
 
 // mesh config
-#define MAX_MESH_PENDING_EVENTS 10
+#define MAX_MESH_PENDING_EVENTS 20 // needs to at least be over MAX_CHILDREN_PER_NODE incase all childrens dont respond
 #define PARENT_SEARCH_BROADCAST_INTERVAL_MS 5000
 #define PARENT_RESPONSE_WAIT_TIME 500
 #define MISSING_CHILDREN_CONTACT_PERIOD_MS 100

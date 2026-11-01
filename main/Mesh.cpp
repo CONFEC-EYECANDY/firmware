@@ -185,6 +185,8 @@ namespace wifi
 
     void Mesh::respondToParentSearchBroadcast(const ReceivedData& receivedData) const
     {
+        if (receivedData.length != ParentSearchPacket::size) return;
+
         if (!((belongsToMesh || isRootNode) && routingSubtable.children.size() < MAX_CHILDREN_PER_NODE)) return;
 
         addEspNowPeer(receivedData.senderMac, true);
@@ -198,6 +200,8 @@ namespace wifi
 
     void Mesh::receivedParentSearchResponse(const ReceivedData& receivedData)
     {
+        if (receivedData.length != ParentSearchResponsePacket::size) return;
+
         ParentSearchResponsePacket parentSearchResponsePacket{};
         parentSearchResponsePacket << receivedData.data;
         ESP_LOGI(TAG, "Received Parent Search Response Packet");
@@ -220,6 +224,8 @@ namespace wifi
 
     void Mesh::respondToParentRequest(const ReceivedData& receivedData)
     {
+        if (receivedData.length != ParentRequestPacket::size) return;
+
         if (routingSubtable.children.size() + 1 > MAX_CHILDREN_PER_NODE)
         {
             ESP_LOGI(TAG, "Too many children, rejecting parent request");
@@ -244,13 +250,18 @@ namespace wifi
         transmitData(receivedData.senderMac, data, sizeof(data));
 
         // update subrouting table for all
-        auto* subRoutingTableUpdateData = new uint8_t[SubroutingTableChangedPacket::getSize(1, 0)];
-        SubroutingTableChangedPacket(receivedData.senderMac, routingSubtable.macAddress) >> subRoutingTableUpdateData;
-        transmitData(receivedData.senderMac, subRoutingTableUpdateData, sizeof(subRoutingTableUpdateData));
+        if (!isRootNode)
+        {
+            uint8_t subRoutingTableUpdateData[SubroutingTableChangedPacket::getSize(1, 0)];
+            SubroutingTableChangedPacket(receivedData.senderMac, routingSubtable.macAddress) >> subRoutingTableUpdateData;
+            transmitData(routingSubtable.parentMacAddress, subRoutingTableUpdateData, sizeof(subRoutingTableUpdateData));
+        }
     }
 
     void Mesh::respondToConnectionCheck(const ReceivedData& receivedData)
     {
+        if (receivedData.length != ConnectionCheckPacket::size) return;
+
         uint8_t data[ConnectionCheckResponsePacket::size];
         ConnectionCheckResponsePacket() >> data;
         transmitData(receivedData.senderMac, data, sizeof(data));
@@ -258,11 +269,15 @@ namespace wifi
 
     void Mesh::receivedConnectionCheckResponse(const ReceivedData& receivedData)
     {
+        if (receivedData.length != ConnectionCheckResponsePacket::size) return;
+
         respondedChildren[receivedData.senderMac] = receivedData.rssi;
     }
 
     void Mesh::receivedParentRequestResponse(const ReceivedData& receivedData)
     {
+        if (receivedData.length != ParentRequestResponsePacket::size) return;
+
         ParentRequestResponsePacket parentRequestResponsePacket{};
         parentRequestResponsePacket << receivedData.data;
         if (!parentRequestResponsePacket.accepted)
@@ -271,20 +286,23 @@ namespace wifi
             return;
         }
 
+        belongsToMesh = true;
         routingSubtable.parentMacAddress = receivedData.senderMac;
         routingSubtable.depth = parentRequestResponsePacket.depth + 1;
-
-        ESP_LOGI(TAG, "Successfully connected to parent " MACSTR " at depth %d with rssi %d", MAC2STR(receivedData.senderMac.address), routingSubtable.depth, receivedData.rssi);
+        addEspNowPeer(receivedData.senderMac, false);
 
         isWaitingForParentResponse = false;
         hasAddedNewCandidateParentThisCycle = false;
         candidateParents.clear();
 
+        ESP_LOGI(TAG, "Successfully connected to parent " MACSTR " at depth %d with rssi %d", MAC2STR(receivedData.senderMac.address), routingSubtable.depth, receivedData.rssi);
         switchState(MeshState::Online);
     }
 
     void Mesh::receivedSubroutingTableChanged(const ReceivedData& receivedData)
     {
+        if (receivedData.length < 3) return;
+
         ESP_LOGI(TAG, "Subrouting Table Child Added");
 
         SubroutingTableChangedPacket packet;
@@ -303,7 +321,7 @@ namespace wifi
         // forward update to parent if not root node
         if (!isRootNode)
         {
-            transmitData(routingSubtable.parentMacAddress, receivedData.data, sizeof(receivedData.data));
+            transmitData(routingSubtable.parentMacAddress, receivedData.data, receivedData.length);
         }
     }
 
@@ -381,7 +399,7 @@ namespace wifi
             int parentIndex;
             if (pickCandidateParent(&candidateParent, &parentIndex))
             {
-                addEspNowPeer(candidateParent.macAddress, false);
+                addEspNowPeer(candidateParent.macAddress, true);
 
                 uint8_t data[ParentRequestPacket::size];
                 ParentRequestPacket{} >> data;
@@ -502,7 +520,14 @@ namespace wifi
 
     void Mesh::addEspNowPeer(const MacAddress& macAddress, const bool isEphemeral = false)
     {
-        if (esp_now_is_peer_exist(macAddress.address.data())) return;
+        if (esp_now_is_peer_exist(macAddress.address.data()))
+        {
+            if (!isEphemeral && getInstance().ephemeralPeers.contains(macAddress))
+            {
+                getInstance().ephemeralPeers.erase(macAddress);
+            }
+            return;
+        }
 
         esp_now_peer_info_t peer = {};
 
@@ -534,17 +559,22 @@ namespace wifi
         MeshEvent event(MeshEventType::ReceivedData);
         event.type = MeshEventType::ReceivedData;
 
-        auto& receivedData = event.data.receivedData;
+        auto& [senderMac, receivedRssi, receivedData, receivedLength] = event.data.receivedData;
 
-        receivedData.senderMac = MacAddress{info->src_addr};
-        receivedData.rssi = info->rx_ctrl->rssi;
-        receivedData.length = length;
-        receivedData.data = static_cast<uint8_t*>(malloc(length));
-        memcpy(receivedData.data, data, length);
+        senderMac = MacAddress{info->src_addr};
+        receivedRssi = info->rx_ctrl->rssi;
+        receivedLength = length;
+        receivedData = static_cast<uint8_t*>(malloc(length));
+        if (receivedData == nullptr)
+        {
+            ESP_LOGE(TAG, "Failed to allocate memory for received data");
+            return;
+        }
+        memcpy(receivedData, data, length);
 
         if (!sendEvent(&event))
         {
-            free(receivedData.data);
+            free(receivedData);
         }
     }
 
