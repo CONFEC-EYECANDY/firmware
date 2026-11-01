@@ -51,6 +51,17 @@ class InstallerTests(unittest.TestCase):
             self.assertIn("--force-reinstall", run.call_args_list[0].args[0])
             self.assertEqual(run.call_args_list[1].args[0][-3:], ["config", "--repo", "TL101GRP/firmware"])
 
+    def test_termux_installs_android_extra_and_uses_system_packages(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            wheel = root / "eyecandy_fw_cli-0.3.0-py3-none-any.whl"
+            wheel.touch()
+            args = ["fw-install.py", "--prefix", str(root / "install"), "--wheel", str(wheel), "--no-path"]
+            with patch.dict(os.environ, {"TERMUX_VERSION": "test"}), patch.object(installer.sys, "argv", args), patch.object(installer.venv, "EnvBuilder") as builder, patch.object(installer.subprocess, "run") as run:
+                installer.main()
+            self.assertTrue(builder.call_args.kwargs["system_site_packages"])
+            self.assertEqual(run.call_args_list[0].args[0][-1], str(wheel) + "[android]")
+
 
 if __name__ == "__main__":
     unittest.main()

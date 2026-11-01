@@ -8,6 +8,7 @@ import unittest
 from unittest.mock import patch
 import zipfile
 from urllib.error import HTTPError, URLError
+from serial.tools.list_ports_common import ListPortInfo
 
 from fw_cli import cli
 
@@ -134,6 +135,75 @@ class ClientTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "Choose a configuration"):
                 cli.update(cli.DEFAULTS)
         download.assert_not_called()
+
+    def test_port_listing_marks_candidates_without_opening_or_saving(self):
+        native = ListPortInfo("COM3")
+        native.vid, native.pid = 0x303A, 0x1001
+        native.description = "USB JTAG/serial"
+        bridge = ListPortInfo("COM4")
+        bridge.vid, bridge.pid = 0x10C4, 0xEA60
+        unknown = ListPortInfo("COM5")
+        cli.atomic_json(self.home / "config.json", {"port": "COM4"})
+        before = (self.home / "config.json").read_bytes()
+        output = io.StringIO()
+        with patch.object(cli.sys, "argv", ["fw", "port"]), patch.object(cli.sys, "stdout", output), patch.object(cli.list_ports, "comports", return_value=[unknown, bridge, native]), patch.object(cli, "is_termux", return_value=False), patch.object(cli.serial, "serial_for_url") as open_port:
+            cli.main()
+        self.assertIn("COM3 — Likely ESP", output.getvalue())
+        self.assertIn("COM4 [selected] — Possible ESP", output.getvalue())
+        self.assertIn("COM5 — Other/unknown", output.getvalue())
+        open_port.assert_not_called()
+        self.assertEqual(before, (self.home / "config.json").read_bytes())
+
+    def test_port_argument_still_saves_selection(self):
+        with patch.object(cli.sys, "argv", ["fw", "port", "COM7"]):
+            cli.main()
+        self.assertEqual(cli.config()["port"], "COM7")
+
+    def test_empty_port_list_preserves_saved_bridge_url(self):
+        output = io.StringIO()
+        with patch.object(cli.list_ports, "comports", return_value=[]), patch.object(cli, "is_termux", return_value=False), patch.object(cli.sys, "stdout", output):
+            cli.show_ports({"port": "socket://localhost:8888"})
+        self.assertIn("No serial ports", output.getvalue())
+        self.assertIn("socket://localhost:8888", output.getvalue())
+
+    def test_termux_usb_is_not_misrepresented_as_a_serial_port(self):
+        output = io.StringIO()
+        with patch.object(cli.shutil, "which", return_value="/bin/termux-usb"), patch.object(cli.subprocess, "run") as run, patch.object(cli.sys, "stdout", output):
+            run.return_value.stdout = '["/dev/bus/usb/001/002"]'
+            cli.show_termux_usb()
+        self.assertEqual(run.call_args.args[0], ["/bin/termux-usb", "-l"])
+        self.assertIn("ESP identity not determined", output.getvalue())
+        self.assertIn("Flash/monitor will request USB permission", output.getvalue())
+
+    def test_termux_timeout_returns_helpful_message(self):
+        output = io.StringIO()
+        with patch.object(cli.shutil, "which", return_value="/bin/termux-usb"), patch.object(cli.subprocess, "run", side_effect=cli.subprocess.TimeoutExpired("termux-usb", 10)), patch.object(cli.sys, "stdout", output):
+            cli.show_termux_usb()
+        self.assertIn("listing unavailable", output.getvalue())
+
+    def test_android_flash_handoff_holds_port_lock(self):
+        cfg = {"port": "/dev/bus/usb/001/002", "variant": "a"}
+        def worker(task, settings, home):
+            self.assertEqual(task, "flash")
+            _, access = cli.locks(settings["port"])
+            with self.assertRaises(cli.Timeout):
+                access.acquire(timeout=0)
+        with patch.object(cli, "is_termux", return_value=True), patch.object(cli, "run_usb_task", side_effect=worker) as run:
+            cli.flash(cfg)
+        run.assert_called_once_with("flash", cfg, self.home)
+
+    def test_android_monitor_dispatches_usb_worker(self):
+        cfg = {"port": "/dev/bus/usb/001/002", "baud": 115200}
+        with patch.object(cli, "is_termux", return_value=True), patch.object(cli, "run_usb_task") as run, patch.object(cli.serial, "serial_for_url") as serial_open:
+            cli.monitor(cfg)
+        run.assert_called_once_with("monitor", cfg, self.home)
+        serial_open.assert_not_called()
+
+    def test_android_disconnect_exits_instead_of_reopening_stale_fd(self):
+        with self.assertRaisesRegex(cli.serial.SerialException, "disconnected"):
+            cli._monitor({"port": "/dev/bus/usb/001/002", "baud": 115200},
+                         opener=lambda *a, **k: (_ for _ in ()).throw(cli.serial.SerialException("disconnected")),
+                         reconnect=False)
 
     def test_monitor_releases_port_for_flash_and_reconnects(self):
         flashed = threading.Event()

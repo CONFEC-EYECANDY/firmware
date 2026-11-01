@@ -6,7 +6,7 @@ if command -v python3 >/dev/null 2>&1; then
 elif command -v python >/dev/null 2>&1; then
     fw_python=python
 else
-    echo 'Python 3.10+ is required. Linux: install python3 and python3-venv. Termux: pkg install python python-cryptography' >&2
+    echo 'Python 3.10+ is required. Linux: install python3 and python3-venv. Termux: pkg install python python-cryptography termux-api libusb' >&2
     exit 1
 fi
 "$fw_python" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 10) else "Python 3.10+ is required")'

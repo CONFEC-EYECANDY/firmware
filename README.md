@@ -92,7 +92,7 @@ python fw-install.py
 ```
 
 Advanced options: `--prefix DIRECTORY`, `--no-path`, `--repo OWNER/REPO`, or
-`--wheel /path/to/eyecandy_fw_cli-0.2.0-py3-none-any.whl`. Set `FW_REPO` before
+`--wheel /path/to/eyecandy_fw_cli-0.3.0-py3-none-any.whl`. Set `FW_REPO` before
 running the shell/batch bootstrap to use another public repository with the same
 release format. The latest release must contain the expected assets; unrelated
 releases marked Latest are not supported. Anonymous GitHub API rate limits apply.
@@ -166,6 +166,8 @@ For a local equivalent of CI, activate ESP-IDF and run
 ## Daily commands
 
 ```sh
+fw port       # List ports, likely ESPs, and the saved port
+fw port COM5  # Save a port (Linux example: /dev/ttyACM0)
 fw update     # Download the latest published firmware release
 fw flash      # Flash cached firmware and exit
 fw mon        # Read serial output; Ctrl+C exits
@@ -198,60 +200,89 @@ Configuration and downloaded builds live in `~/.eyecandy-fw`; set `FW_HOME` to
 use another directory. Updates switch the current-build pointer only after
 validation; older cached build directories are retained.
 
-## Android / Termux
+`fw port` does not change your saved port or open/reset connected devices. It
+shows all serial ports so boards with missing USB metadata are not hidden.
+Espressif identities are marked likely ESP; common USB-UART bridges are marked
+possible ESP, since those adapters are also used with other hardware. USB ID,
+description, serial number, and the selected port are shown when available.
 
-Install a supported Termux distribution. Inside Termux:
+## Android / Termux: direct USB flashing and monitoring
+
+Direct USB-OTG is integrated through Android's USB permission/file-descriptor
+handoff. No root or separately running serial bridge is required for supported
+USB devices. **The integration is tested with simulated USB devices, not yet on
+a physical Android phone.** Device-specific reset/re-enumeration behavior still
+needs hardware validation.
+
+Install Termux and its **Termux:API companion app from the same distribution
+source** (for example, both from F-Droid). The app is separate from the
+`termux-api` command-line package. In Termux:
 
 ```sh
-pkg install python python-cryptography curl
+pkg install python python-cryptography termux-api libusb curl
 curl -fL https://github.com/TL101GRP/firmware/releases/latest/download/fw-install.sh -o fw-install.sh
 sh fw-install.sh
 ```
 
-Open a new terminal or run the source command printed by the installer.
-The Termux environment allows its system Python packages, so the prebuilt
-`python-cryptography` package can satisfy esptool's dependency. Additional build
-packages may be needed if other dependencies have no compatible wheels.
-Installation has not been validated on a physical phone.
+Rerun the installer after the new release if you have an older `fw`. It detects
+Termux and installs the Android extra (`espbridge==1.2.0` and PyUSB) into fw's
+private environment. System Python packages remain available so Termux's
+prebuilt cryptography package can be used. Some phone architectures may need
+additional build packages for other Python dependencies.
 
-**Installing the CLI does not provide direct Android USB access.** An unrooted
-phone normally cannot expose the board as a TTY that desktop Python can open.
-USB flashing requires OTG and an Android serial bridge compatible with your
-board. The exact bridge depends on the board's USB interface and phone.
-
-If a compatible Android bridge exposes a **local TCP serial endpoint**, configure
-its real address, for example:
+Open a new terminal or run the source command printed by the installer. Connect
+the ESP through a USB-OTG data cable, then:
 
 ```sh
-fw port socket://127.0.0.1:8888
+fw port                            # List connected USB paths
+fw port /dev/bus/usb/001/002         # Use the actual path listed for your board
 fw config a
-fw config --manual-reset
-fw update
+fw config --no-manual-reset         # Enable automatic reset if previously disabled
+fw go                              # Download, request USB permission, flash, monitor
 ```
 
-Configure the bridge's serial baud rate to 115200. For `fw flash`, manually enter
-ROM download mode (typically hold BOOT, tap RESET, release BOOT), then run the
-command. After successful flashing, reset into normal boot mode and run `fw mon`.
-`fw fla` also starts monitoring automatically, but you still must reset the board.
-Raw TCP does not carry reset-line or baud-rate controls; a working transparent
-binary bridge is necessary. An RFC2217 bridge can instead be configured using
-`rfc2217://...`; automatic reset depends on its implementation and hardware.
-Only grant the bridge USB access to the intended board and bind it locally.
+Accept Android's USB permission dialog. Later use `fw fla` for cached firmware,
+`fw mon` to monitor only, or `fw flash` from another terminal while a monitor is
+open. The monitor releases its USB interface for flashing, then reopens it.
+Ctrl+C exits the monitor. This monitor displays output only.
 
-This is a supported serial-URL configuration path, **not a claim that every
-Android bridge/board combination works**. Physical Android flashing remains to
-be tested. On a rooted device with an accessible serial TTY, that TTY can be used
-instead. Restore desktop automatic reset with `fw config --no-manual-reset`.
+USB paths can change when a board is unplugged or re-enumerates during reset.
+If the selected device disconnects, fw reports the error instead of silently
+choosing another board. Run `fw port`, save the new path, and retry. If automatic
+bootloader entry fails on your board, use `fw config --manual-reset`, enter
+bootloader mode with BOOT/RESET before flashing, and reset to normal boot after.
+Use `fw config --no-manual-reset` to restore automatic reset.
+
+The adapter recognizes native Espressif USB (`303A:1001`, `303A:0002`), CP2102
+(`10C4:EA60`), CH340/CH341 (`1A86:7523`, `1A86:5523`), CH9102 (`1A86:55D4`), and
+FT232 (`0403:6001`). Listing a raw Android USB path alone cannot confirm that an
+ESP is attached. Unsupported USB identities are rejected before configuring the
+interface. Firmware flashing still verifies the target is ESP32-C3. Flashing
+uses 115200 baud; the FT232 adapter currently supports only that rate, including
+monitoring. A board needs appropriate reset wiring for automatic reset.
+
+The linked [Termux-Serial-Monitor](https://github.com/7wp81x/Termux-Serial-Monitor)
+script is not installed, copied, or run. fw has its own permission worker and
+serial adapter, and uses the separate
+[ESP-Bridge](https://github.com/7wp81x/ESP-Bridge) library for descriptor wrapping
+and USB helpers. It sends raw serial bytes; no ESP-Bridge firmware/protocol is
+required on the board. Esptool performs image validation, flashing, verification,
+and reset over this transport.
+
+Existing `socket://...` and `rfc2217://...` serial bridges remain supported as an
+alternative. Raw TCP bridges require `fw config --manual-reset` and a matching
+bridge baud rate. A rooted device with an accessible serial TTY can use that TTY.
 
 ## Developing the CLI
 
 ```sh
-python -m pip install -e ./tools/fw_cli build
+python -m pip install -e "./tools/fw_cli[android]" build
 python -m unittest discover -s tools/fw_cli/tests -v
 python -m unittest discover -s tools/tests -v
 python -m build --wheel --outdir dist/cli tools/fw_cli
 ```
 
 Tests cover corrupted downloads, preservation of the previous cached build,
-manifest-based flash arguments, and monitor release/reconnection during flashing.
+manifest-based flash arguments, monitor release/reconnection during flashing,
+Android permission failures, USB packet buffering, and reset/baud controls.
 Hardware flashing is a separate validation step.

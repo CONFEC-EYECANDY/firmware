@@ -110,7 +110,7 @@ def main():
             wheel.write_bytes(fetch(asset["browser_download_url"]))
         # First ensure dependencies, then replace the CLI even if its version is unchanged.
         if not args.no_deps:
-            subprocess.run([str(python), "-m", "pip", "install", "--upgrade", str(wheel)], check=True)
+            subprocess.run([str(python), "-m", "pip", "install", "--upgrade", str(wheel) + ("[android]" if termux else "")], check=True)
         subprocess.run([str(python), "-m", "pip", "install", "--force-reinstall", "--no-deps", str(wheel)], check=True)
     subprocess.run([str(command), "config", "--repo", args.repo], check=True)
     if not args.no_path:
@@ -125,4 +125,4 @@ if __name__ == "__main__":
     try:
         main()
     except (OSError, ValueError, StopIteration, subprocess.CalledProcessError) as exc:
-        sys.exit(f"fw-install: {exc}\nCheck Python venv support and network access. On Termux install python-cryptography; additional build dependencies may be needed.")
+        sys.exit(f"fw-install: {exc}\nCheck Python venv support and network access. On Termux install python-cryptography, libusb, and termux-api; additional build dependencies may be needed.")

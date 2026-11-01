@@ -17,6 +17,8 @@ import re
 
 from filelock import FileLock, Timeout
 import serial
+from serial.tools import list_ports
+from .android import is_usb_path, run_usb_task
 
 HOME = Path(os.environ.get("FW_HOME", Path.home() / ".eyecandy-fw"))
 DEFAULTS = {"repo": "TL101GRP/firmware", "baud": 115200}
@@ -155,23 +157,94 @@ def flash(cfg):
     intent, access = locks(port)
     print("Waiting for serial port...", flush=True)
     with intent.acquire(timeout=60), access.acquire(timeout=60):
-        command = [sys.executable, "-m", "esptool", "--chip", manifest["chip"], "--port", port]
-        if cfg.get("manual_reset"):
-            command += ["--before", "no-reset", "--after", "no-reset"]
-        command += ["write-flash"]
-        for key in ("flash_mode", "flash_freq", "flash_size"):
-            command += ["--" + key.replace("_", "-"), manifest["flash_settings"][key]]
-        for entry in manifest["files"]:
-            command += [entry["offset"], str(root / entry["file"])]
-        subprocess.run(command, check=True)
+        if is_usb_path(port):
+            if not is_termux():
+                raise ValueError("Raw USB paths are supported in Termux only; use a serial TTY on desktop Linux")
+            run_usb_task("flash", cfg, HOME)
+        else:
+            subprocess.run([sys.executable, "-m", "esptool"] + flash_arguments(cfg, root, manifest), check=True)
     if cfg.get("manual_reset"):
         print("Flashing complete. Reset the board into normal boot mode.")
+
+
+def flash_arguments(cfg, root, manifest):
+    command = ["--chip", manifest["chip"], "--port", cfg["port"], "--baud", "115200"]
+    if cfg.get("manual_reset"):
+        command += ["--before", "no-reset", "--after", "no-reset"]
+    command += ["write-flash"]
+    for key in ("flash_mode", "flash_freq", "flash_size"):
+        command += ["--" + key.replace("_", "-"), manifest["flash_settings"][key]]
+    for entry in manifest["files"]:
+        command += [entry["offset"], str(root / entry["file"])]
+    return command
 
 
 def require_port(cfg):
     if not cfg.get("port"):
         raise ValueError("Set a port first: fw port COM5 (or /dev/ttyACM0 or a serial URL)")
     return cfg["port"]
+
+
+def is_termux():
+    return bool(os.environ.get("TERMUX_VERSION")) or "/com.termux/" in sys.prefix
+
+
+def port_hint(port):
+    text = " ".join(str(getattr(port, field, "") or "")
+                    for field in ("description", "manufacturer", "product")).lower()
+    if port.vid == 0x303A or "espressif" in text or re.search(r"\besp(?:32|8266)", text):
+        return "Likely ESP (USB identity)"
+    if port.vid in (0x10C4, 0x1A86, 0x0403) or any(
+            name in text for name in ("cp210", "ch340", "ch341", "ch910", "ft232")):
+        return "Possible ESP (USB-UART bridge; not confirmed)"
+    return "Other/unknown serial device"
+
+
+def show_ports(cfg):
+    try:
+        ports = sorted(list_ports.comports())
+    except OSError:
+        if not is_termux():
+            raise
+        ports = []  # Android may restrict sysfs/TTY enumeration; USB API still works.
+    print(f"Saved port: {cfg.get('port') or '(none)'}")
+    if not ports:
+        print("No serial ports detected.")
+    for port in ports:
+        selected = " [selected]" if port.device == cfg.get("port") else ""
+        print(f"{port.device}{selected} — {port_hint(port)}")
+        details = [port.description or "No description"]
+        if port.vid is not None and port.pid is not None:
+            details.append(f"USB {port.vid:04X}:{port.pid:04X}")
+        if port.serial_number:
+            details.append(f"serial {port.serial_number}")
+        print("  " + " | ".join(details))
+    if ports:
+        print("USB identity is a hint, not proof of an ESP. No ports were opened or reset.")
+    if is_termux():
+        show_termux_usb()
+    print("Save a serial port or bridge URL with: fw port PORT")
+
+
+def show_termux_usb():
+    executable = shutil.which("termux-usb")
+    if not executable:
+        print("Android USB listing needs the termux-api package and Termux:API companion app.")
+    else:
+        try:
+            result = subprocess.run([executable, "-l"], capture_output=True, text=True,
+                                    timeout=10, check=True)
+            devices = json.loads(result.stdout)
+            if not isinstance(devices, list) or not all(isinstance(d, str) for d in devices):
+                raise ValueError("unexpected device list")
+            print("Android USB devices (ESP identity not determined):")
+            for device in devices:
+                print(f"  {device}")
+            if not devices:
+                print("  None detected; check OTG connection.")
+        except (OSError, ValueError, subprocess.SubprocessError) as exc:
+            print(f"Android USB listing unavailable: {exc}")
+    print("Select an Android USB device with: fw port /dev/bus/usb/BBB/DDD. Flash/monitor will request USB permission.")
 
 
 def monitor(cfg):
@@ -184,14 +257,20 @@ def monitor(cfg):
         print("An fw monitor is already running for this port; it will reconnect automatically.")
         return
     try:
-        _monitor(cfg)
+        if is_usb_path(port):
+            if not is_termux():
+                raise ValueError("Raw USB paths are supported in Termux only")
+            run_usb_task("monitor", cfg, HOME)
+        else:
+            _monitor(cfg)
     finally:
         owner.release()
 
 
-def _monitor(cfg):
+def _monitor(cfg, opener=None, reconnect=True):
     port = require_port(cfg)
     intent, access = locks(port)
+    opener = opener or serial.serial_for_url
     print(f"Monitoring {port} at {cfg['baud']} baud. Ctrl+C exits.", flush=True)
     while True:
         try:
@@ -199,7 +278,7 @@ def _monitor(cfg):
             with intent.acquire(timeout=0):
                 access.acquire(timeout=0)
             try:
-                with serial.serial_for_url(port, baudrate=cfg["baud"], timeout=0.2) as stream:
+                with opener(port, baudrate=cfg["baud"], timeout=0.2) as stream:
                     while True:
                         try:
                             intent.acquire(timeout=0)
@@ -216,6 +295,8 @@ def _monitor(cfg):
         except Timeout:
             pass
         except (serial.SerialException, OSError) as exc:
+            if not reconnect:
+                raise
             print(f"\nSerial disconnected: {exc}; retrying...", file=sys.stderr)
             time.sleep(1)
         time.sleep(0.2)
@@ -228,7 +309,7 @@ def main():
     for name in ("update", "flash", "mon", "fla", "go", "configs"):
         sub.add_parser(name)
     p = sub.add_parser("port")
-    p.add_argument("value")
+    p.add_argument("value", nargs="?", help="Save a port; omit to list ports and likely ESP devices")
     p = sub.add_parser("config")
     p.add_argument("variant", nargs="?", help="Save a config name, e.g. a or b")
     p.add_argument("--repo")
@@ -238,6 +319,9 @@ def main():
     HOME.mkdir(parents=True, exist_ok=True)
     try:
         cfg = config()
+        if args.command == "port" and args.value is None:
+            show_ports(cfg)
+            return
         if args.command in ("config", "port"):
             if getattr(args, "variant", None) is not None:
                 cfg["variant"] = args.variant
