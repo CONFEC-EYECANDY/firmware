@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "eyecandy-fw-cli"
+version = "0.2.0"
+description = "Download, flash, and monitor eyecandy firmware"
+requires-python = ">=3.10"
+dependencies = ["esptool>=5,<6", "pyserial>=3.5,<4", "filelock>=3.12,<4"]
+
+[project.scripts]
+fw = "fw_cli.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["fw_cli*"]
