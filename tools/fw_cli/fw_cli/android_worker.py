@@ -3,12 +3,28 @@ import json
 import os
 from pathlib import Path
 import sys
+from types import ModuleType
 
 from . import cli
 from .usb_serial import USBSerial
 
 
+def prepare_android_esptool():
+    """Disable desktop TTY discovery in this dedicated Android USB worker.
+
+    esp-pylib imports pySerial's enumerator even when esptool receives an
+    already-connected transport. Android has no supported pySerial enumerator;
+    USB permission, selection, and VID/PID come from our USBSerial instead.
+    """
+    if sys.platform != "android":
+        return
+    module = ModuleType("serial.tools.list_ports")
+    module.comports = lambda include_links=False: []
+    sys.modules.setdefault(module.__name__, module)
+
+
 def flash_usb(cfg, fd):
+    prepare_android_esptool()
     import esptool
     from esptool.targets.esp32c3 import ESP32C3ROM
     from esptool.reset import ClassicReset, USBJTAGSerialReset

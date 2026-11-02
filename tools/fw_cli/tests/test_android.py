@@ -2,6 +2,7 @@ import io
 import json
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 from types import SimpleNamespace
 import unittest
@@ -123,6 +124,41 @@ class TransportTests(unittest.TestCase):
 
 
 class PermissionTests(unittest.TestCase):
+    def test_android_worker_imports_real_esptool_in_fresh_process(self):
+        # A fresh interpreter is essential: desktop imports in this test module
+        # would otherwise hide pySerial's Android import failure.
+        script = '''
+import sys
+sys.platform = "android"
+from pathlib import Path
+from unittest.mock import patch
+from fw_cli import android_worker, cli
+cfg = {"variant": "a", "port": "/dev/bus/usb/001/002"}
+manifest = {"variant": "a", "chip": "esp32c3", "flash_settings": {
+    "flash_mode": "dio", "flash_freq": "80m", "flash_size": "2MB"},
+    "files": [{"offset": "0x10000", "file": "app.bin"}]}
+class ReachedUSB(Exception):
+    pass
+# Exercise the actual flash entry point, including all dependency imports,
+# before stopping at the hardware boundary.
+with patch.object(cli, "current", return_value=(Path("/bundle"), manifest)), \\
+     patch.object(android_worker, "USBSerial", side_effect=ReachedUSB):
+    try:
+        android_worker.flash_usb(cfg, 42)
+    except ReachedUSB:
+        pass
+    else:
+        raise AssertionError("Did not reach USB transport")
+import esptool
+from esp_pylib.serial_ports import get_port_names
+assert get_port_names() == []
+assert sys.platform == "android"
+'''
+        result = subprocess.run([sys.executable, "-c", script],
+                                capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertNotIn("enumerate ttys", result.stderr + result.stdout)
+
     def test_callback_preserves_config_and_uses_installed_python(self):
         cfg = {"port": "/dev/bus/usb/001/002", "variant": "b", "manual_reset": True}
         def launch(args, **kwargs):
