@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-spec = importlib.util.spec_from_file_location("installer", Path(__file__).resolve().parents[2] / "fw-install.py")
+spec = importlib.util.spec_from_file_location("installer", Path(__file__).resolve().parents[1] / "fw-install.py")
 installer = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(installer)
 
@@ -49,7 +49,7 @@ class InstallerTests(unittest.TestCase):
             fetch.assert_not_called()
             add_path.assert_not_called()
             self.assertIn("--force-reinstall", run.call_args_list[0].args[0])
-            self.assertEqual(run.call_args_list[1].args[0][-3:], ["config", "--repo", "TL101GRP/firmware"])
+            self.assertEqual(run.call_args_list[1].args[0][-3:], ["config", "--repo", "CONFEC-EYECANDY/firmware"])
 
     def test_termux_installs_android_extra_and_uses_system_packages(self):
         with tempfile.TemporaryDirectory() as tmp:

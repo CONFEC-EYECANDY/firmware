@@ -17,11 +17,10 @@ import re
 
 from filelock import FileLock, Timeout
 import serial
-from serial.tools import list_ports
 from .android import is_usb_path, run_usb_task
 
 HOME = Path(os.environ.get("FW_HOME", Path.home() / ".eyecandy-fw"))
-DEFAULTS = {"repo": "TL101GRP/firmware", "baud": 115200}
+DEFAULTS = {"repo": "CONFEC-EYECANDY/firmware", "baud": 115200}
 
 
 def atomic_json(path, value):
@@ -186,7 +185,14 @@ def require_port(cfg):
 
 
 def is_termux():
-    return bool(os.environ.get("TERMUX_VERSION")) or "/com.termux/" in sys.prefix
+    return sys.platform == "android" or bool(os.environ.get("TERMUX_VERSION")) or "/com.termux/" in sys.prefix
+
+
+def serial_ports():
+    # pySerial 3.5 cannot import its port enumerator on Python's Android platform.
+    # Keep desktop discovery out of startup and the Android USB path.
+    from serial.tools import list_ports
+    return list_ports.comports()
 
 
 def port_hint(port):
@@ -201,13 +207,12 @@ def port_hint(port):
 
 
 def show_ports(cfg):
-    try:
-        ports = sorted(list_ports.comports())
-    except OSError:
-        if not is_termux():
-            raise
-        ports = []  # Android may restrict sysfs/TTY enumeration; USB API still works.
     print(f"Saved port: {cfg.get('port') or '(none)'}")
+    if is_termux():
+        show_termux_usb()
+        print("Save a USB path, serial port, or bridge URL with: fw port PORT")
+        return
+    ports = sorted(serial_ports())
     if not ports:
         print("No serial ports detected.")
     for port in ports:
@@ -221,8 +226,6 @@ def show_ports(cfg):
         print("  " + " | ".join(details))
     if ports:
         print("USB identity is a hint, not proof of an ESP. No ports were opened or reset.")
-    if is_termux():
-        show_termux_usb()
     print("Save a serial port or bridge URL with: fw port PORT")
 
 

@@ -1,8 +1,11 @@
 import hashlib
 import io
 import json
+import os
 from pathlib import Path
 import tempfile
+import subprocess
+import sys
 import threading
 import unittest
 from unittest.mock import patch
@@ -14,6 +17,28 @@ from fw_cli import cli
 
 
 class ClientTests(unittest.TestCase):
+    def test_android_startup_config_and_usb_listing_without_desktop_enumerator(self):
+        script = '''
+import sys
+sys.platform = "android"
+from unittest.mock import patch
+from fw_cli import cli
+assert cli.is_termux()
+sys.argv = ["fw", "config", "--repo", "CONFEC-EYECANDY/firmware"]
+cli.main()
+assert cli.config()["repo"] == "CONFEC-EYECANDY/firmware"
+sys.argv = ["fw", "port"]
+with patch.object(cli, "show_termux_usb") as usb:
+    cli.main()
+    usb.assert_called_once()
+assert "serial.tools.list_ports" not in sys.modules
+'''
+        env = dict(os.environ, FW_HOME=str(self.home))
+        env.pop("TERMUX_VERSION", None)
+        result = subprocess.run([sys.executable, "-c", script], env=env,
+                                capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
@@ -146,7 +171,7 @@ class ClientTests(unittest.TestCase):
         cli.atomic_json(self.home / "config.json", {"port": "COM4"})
         before = (self.home / "config.json").read_bytes()
         output = io.StringIO()
-        with patch.object(cli.sys, "argv", ["fw", "port"]), patch.object(cli.sys, "stdout", output), patch.object(cli.list_ports, "comports", return_value=[unknown, bridge, native]), patch.object(cli, "is_termux", return_value=False), patch.object(cli.serial, "serial_for_url") as open_port:
+        with patch.object(cli.sys, "argv", ["fw", "port"]), patch.object(cli.sys, "stdout", output), patch.object(cli, "serial_ports", return_value=[unknown, bridge, native]), patch.object(cli, "is_termux", return_value=False), patch.object(cli.serial, "serial_for_url") as open_port:
             cli.main()
         self.assertIn("COM3 — Likely ESP", output.getvalue())
         self.assertIn("COM4 [selected] — Possible ESP", output.getvalue())
@@ -161,7 +186,7 @@ class ClientTests(unittest.TestCase):
 
     def test_empty_port_list_preserves_saved_bridge_url(self):
         output = io.StringIO()
-        with patch.object(cli.list_ports, "comports", return_value=[]), patch.object(cli, "is_termux", return_value=False), patch.object(cli.sys, "stdout", output):
+        with patch.object(cli, "serial_ports", return_value=[]), patch.object(cli, "is_termux", return_value=False), patch.object(cli.sys, "stdout", output):
             cli.show_ports({"port": "socket://localhost:8888"})
         self.assertIn("No serial ports", output.getvalue())
         self.assertIn("socket://localhost:8888", output.getvalue())

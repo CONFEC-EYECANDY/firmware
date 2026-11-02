@@ -12,7 +12,7 @@ fi
 "$fw_python" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 10) else "Python 3.10+ is required")'
 fw_tmp=$(mktemp -d)
 trap 'rm -rf "$fw_tmp"' EXIT HUP INT TERM
-fw_repo=${FW_REPO:-TL101GRP/firmware}
+fw_repo=${FW_REPO:-CONFEC-EYECANDY/firmware}
 "$fw_python" - "$fw_repo" "$fw_tmp/fw-install.py" <<'PY'
 import pathlib, re, sys, urllib.request
 repo, dest = sys.argv[1:]

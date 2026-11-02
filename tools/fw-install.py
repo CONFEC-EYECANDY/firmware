@@ -65,7 +65,7 @@ def main():
     if sys.version_info < (3, 10):
         raise ValueError("Install Python 3.10+ first")
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--repo", default=os.environ.get("FW_REPO", "TL101GRP/firmware"))
+    parser.add_argument("--repo", default=os.environ.get("FW_REPO", "CONFEC-EYECANDY/firmware"))
     parser.add_argument("--prefix", type=Path, default=Path.home() / ".local" / "share" / "eyecandy-fw")
     parser.add_argument("--wheel", type=Path, help="Install a local wheel instead of downloading (offline with --no-deps)")
     parser.add_argument("--no-path", action="store_true", help="Do not modify shell profiles or Windows PATH")
@@ -118,7 +118,7 @@ def main():
         state["path_setup"] = True
         marker.write_text(json.dumps(state, indent=2))
     print(f"Offline uninstaller saved in: {prefix}")
-    print(f"Installed: {command}\nOpen a new terminal, then run: fw port YOUR_PORT\nThen: fw configs, fw config a, fw go")
+    print(f"Installed: {command}\nOpen a new terminal, then run: fw port YOUR_PORT\nThen: fw configs, fw config NAME, fw go")
 
 
 if __name__ == "__main__":
