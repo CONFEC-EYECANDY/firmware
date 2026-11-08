@@ -73,7 +73,6 @@ namespace wifi
         accepted = data[2];
     }
 
-
     // subrouting table child added packet
     void SubroutingTableChangedPacket::operator>>(uint8_t* data) const
     {
@@ -96,7 +95,6 @@ namespace wifi
                 data[i++] = j.address[k];
         }
     }
-
     void SubroutingTableChangedPacket::operator<<(const uint8_t* data)
     {
         size_t i = 1;

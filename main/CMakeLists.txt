@@ -3,7 +3,7 @@ idf_component_register(
             "main.cpp"
             "Mesh.cpp"
             "WiFiManager.cpp"
-            "RoutingSubtable.cpp"
+            "RoutingTable.cpp"
             "MeshPackets.cpp"
             "MacAddress.cpp"
 

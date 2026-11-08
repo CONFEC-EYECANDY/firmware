@@ -1,4 +1,4 @@
-#include "RoutingSubtable.hpp"
+#include "RoutingTable.hpp"
 
 #include <algorithm>
 #include <esp_log.h>
@@ -8,7 +8,7 @@ namespace wifi
 {
     static auto TAG = "RoutingSubtable";
 
-    void RoutingSubtable::addNode(const MacAddress& nodeMac, const MacAddress& nodeParentMac)
+    void RoutingTable::addNode(const MacAddress& nodeMac, const MacAddress& nodeParentMac)
     {
         if (nodeMap.contains(nodeMac)) return;
 
@@ -20,7 +20,7 @@ namespace wifi
             children.push_back(node.macAddress);
     }
 
-    void RoutingSubtable::addNode(const MacAddress& nodeMac, const MacAddress& nodeParentMac, const MacAddress& nextHopMac)
+    void RoutingTable::addNode(const MacAddress& nodeMac, const MacAddress& nodeParentMac, const MacAddress& nextHopMac)
     {
         if (nodeMap.contains(nodeMac)) return;
 
@@ -31,7 +31,7 @@ namespace wifi
             children.push_back(node.macAddress);
     }
 
-    void RoutingSubtable::removeNode(const MacAddress& nodeMacAddress)
+    void RoutingTable::removeNode(const MacAddress& nodeMacAddress)
     {
         if (nodeMap[nodeMacAddress].parentMacAddress == macAddress)
             children.erase(std::ranges::find(children.begin(), children.end(), nodeMacAddress));
@@ -39,7 +39,7 @@ namespace wifi
         nodeMap.erase(nodeMacAddress);
     }
 
-    MacAddress RoutingSubtable::getNextHopTo(const MacAddress& destinationMacAddress)
+    MacAddress RoutingTable::getNextHopTo(const MacAddress& destinationMacAddress)
     {
         if (destinationMacAddress == macAddress)
         {
@@ -53,7 +53,7 @@ namespace wifi
         return parentMacAddress;
     }
 
-    MacAddress RoutingSubtable::getNextHopMac(const MacAddress& nodeMacAddress) const
+    MacAddress RoutingTable::getNextHopMac(const MacAddress& nodeMacAddress) const
     {
         auto searchResult = nodeMap.find(nodeMacAddress);
         while (true)

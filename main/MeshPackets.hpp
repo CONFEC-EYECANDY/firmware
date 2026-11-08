@@ -3,7 +3,7 @@
 
 #include <utility>
 
-#include "RoutingSubtable.hpp"
+#include "RoutingTable.hpp"
 
 namespace wifi
 {

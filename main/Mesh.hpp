@@ -8,15 +8,15 @@
 #include "config.hpp"
 #include "WiFiManager.hpp"
 #include "MeshEvent.hpp"
-#include "RoutingSubtable.hpp"
+#include "RoutingTable.hpp"
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 
 namespace wifi
 {
-    static constexpr uint8_t broadcastMacArr[6] {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
-    static MacAddress broadcastMac{broadcastMacArr};
+    static constexpr uint8_t BROADCAST_MAC_ADDRESS_ARRAY[6] {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
+    static MacAddress BROADCAST_MAC_ADDRESS{BROADCAST_MAC_ADDRESS_ARRAY};
 
     class Mesh
     {
@@ -24,7 +24,7 @@ namespace wifi
         {
             Offline,
             Online,
-            WaitingForChildrenAlive,
+            FindingNemo,
             ContactingMissingChildren,
             LookingForParent,
         };
@@ -35,6 +35,16 @@ namespace wifi
             uint8_t depth {};
             uint8_t childrenCount {};
         };
+        struct TransmitData
+        {
+            TransmitData() = default;
+            ~TransmitData() = default;
+            explicit TransmitData(const MacAddress destAddress, const uint8_t* data, const size_t length) : destinationMac(destAddress), data(data), length(length) {}
+
+            MacAddress destinationMac;
+            const uint8_t* data{};
+            size_t length{};
+        };
 
     public:
         Mesh(const Mesh&) = delete;
@@ -43,8 +53,8 @@ namespace wifi
         static Mesh& getInstance();
 
         // mesh properties
-        RoutingSubtable routingSubtable {};
-        TickType_t fsmEventTimerStartedAt {};
+        RoutingTable routingTable {};
+        TickType_t lastFsmEventAt {};
         bool belongsToMesh {false};
         bool isRootNode {SET_ROOT_NODE};
 
@@ -52,7 +62,7 @@ namespace wifi
         static void runEntry(void* arg);
 
         // interact with mesh task
-        static bool sendEvent(const MeshEvent* event);
+        static bool sendEvent(const MeshEvent& event);
         static bool transmitData(const MacAddress& destination, const uint8_t* data, size_t length);
 
     private:
@@ -64,18 +74,18 @@ namespace wifi
         QueueHandle_t eventQueue_ = nullptr;
         QueueHandle_t transmitQueue_ = nullptr;
         MeshState meshState_ {MeshState::Offline};
-        std::unordered_set<MacAddress, MacHash>  ephemeralPeers {};
+        std::unordered_map<MacAddress, bool, MacHash> peers {};
 
         // event system
-        void processQueue(TickType_t processFor);
+        void processQueue(TickType_t waitOnQueueFor);
 
         void radioUpMeshEvent(const MeshEvent* event);
         void radioDownMeshEvent(const MeshEvent* event);
-        static void transmitDataMeshEvent(const MeshEvent* event);
         void receivedDataMeshEvent(const MeshEvent* event);
         void transmissionCallbackEvent(const MeshEvent* event);
 
         // subroutines
+        static void transmitData(const TransmitData& transmitData);
         void respondToParentSearchBroadcast(const ReceivedData& receivedData) const;
         void receivedParentSearchResponse(const ReceivedData& receivedData);
         void respondToParentRequest(const ReceivedData& receivedData);
@@ -85,20 +95,24 @@ namespace wifi
         void receivedSubroutingTableChanged(const ReceivedData& receivedData);
         bool pickCandidateParent(CandidateParent* parent, int* parentIndex) const;
 
+        void reInitEspNow();
+        static void deInitEspNow();
+
         // finite state machine
-        TickType_t getFsmTaskDelay() const;
-        TickType_t nextFsmStateEventIn() const;
+        TickType_t getFsmEventInterval() const;
+        TickType_t nextFsmEventIn() const;
         void switchState(MeshState newState);
-        void processFsmEventTask();
+        void processFsmEvent();
 
         std::vector<CandidateParent> candidateParents {};
         bool hasAddedNewCandidateParentThisCycle {false};
         bool isWaitingForParentResponse {false};
-        void parentBroadcastFsmEvent();
+        void parentSearchFsmEvent();
 
-        std::unordered_map<MacAddress, signed, MacHash> respondedChildren {};
-        bool isWaitingForChildrenAlive {false};
-        void checkConnection();
+        bool isWaitingForChildren {true};
+        bool hasInformedParent {false};
+        std::unordered_map<MacAddress, bool, MacHash> respondedChildren {};
+        void findingNemoFsmEvent();
 
         // esp now helpers and callbacks
         static void addEspNowPeer(const MacAddress& macAddress, bool isEphemeral);

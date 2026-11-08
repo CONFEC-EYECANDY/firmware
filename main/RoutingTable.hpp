@@ -22,7 +22,7 @@ namespace wifi
         MacAddress nextHopMacAddress {};
     };
 
-    class RoutingSubtable
+    class RoutingTable
     {
     public:
         MacAddress parentMacAddress{};
@@ -31,8 +31,8 @@ namespace wifi
         std::vector<MacAddress> children {};
         std::unordered_map<MacAddress, Node, MacHash> nodeMap{};
 
-        RoutingSubtable() = default;
-        ~RoutingSubtable() = default;
+        RoutingTable() = default;
+        ~RoutingTable() = default;
 
         void addNode(const MacAddress& nodeMac, const MacAddress& nodeParentMac);
         void addNode(const MacAddress& nodeMac, const MacAddress& nodeParentMac, const MacAddress& nextHopMac);

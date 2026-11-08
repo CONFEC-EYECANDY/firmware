@@ -9,4 +9,8 @@ extern "C" void app_main()
 
     ESP_ERROR_CHECK(wifi.init());
     ESP_ERROR_CHECK(mesh.init());
+
+    // start wifi
+    constexpr wifi::WiFiEvent event{.type = wifi::WiFiEventType::StartRadio, .data = nullptr};
+    if (!wifi::WiFiManager::getInstance().sendEvent(&event)) return;
 }
